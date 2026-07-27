@@ -105,6 +105,9 @@ static char barleftcfg[128] = "workspaces";
 static char barcentercfg[128] = "command";
 static char barrightcfg[128] = "clock";
 static int screen_off_minutes;
+/* Pointer warps generate synthetic motion.  Keep them off by default so an
+   X11 game never sees a workspace/focus change as mouse movement. */
+static int warp_pointer;
 static BarPosition barpos = BAR_TOP;
 static Display *dpy;
 static Window root;
@@ -1223,7 +1226,7 @@ static void retile(void) {
 }
 
 static void warpfocus(Node *n) {
-    if (!n || !n->leaf) return;
+    if (!warp_pointer || !n || !n->leaf) return;
     XWarpPointer(dpy, None, root, 0, 0, 0, 0, n->x + n->w / 2, n->y + n->h / 2);
 }
 
@@ -1662,6 +1665,11 @@ static void hidetree(Node *n) {
 /* switch only monitor mi to workspace ws; other monitors keep their own */
 static void switch_workspace_on(int mi, int ws) {
     if (mi < 0 || mi >= nmons || ws < 0 || ws >= numws || ws == mons[mi].curws) return;
+    /* A game can use a pointer grab/relative mouse input.  Drop keyboard focus
+       before its window becomes unviewable, so it receives FocusOut before the
+       workspace change and cannot keep consuming normal X11 input in the
+       background.  Unmapping then releases any server-side pointer grab. */
+    if (mon_focused(mi)) XSetInputFocus(dpy, root, RevertToPointerRoot, CurrentTime);
     /* snapshot the windows we are about to hide so the overview can still
        show their contents while they are unmapped */
     if (composite_ok) capture_tree(mons[mi].tree[mons[mi].curws]);
@@ -2445,6 +2453,7 @@ static void reset_config_defaults(void) {
     copystr(barcentercfg, sizeof barcentercfg, "command");
     copystr(barrightcfg, sizeof barrightcfg, "clock");
     screen_off_minutes = 0;
+    warp_pointer = 0;
     barpos = BAR_TOP;
     nmodbinds = 0;
     nnormalbinds = 0;
@@ -2657,6 +2666,7 @@ static int apply_scalar_config(const char *k, const char *v) {
     else if (!strcmp(k, "bar_center")) copystr(barcentercfg, sizeof barcentercfg, v);
     else if (!strcmp(k, "bar_right")) copystr(barrightcfg, sizeof barrightcfg, v);
     else if (!strcmp(k, "screen_off_minutes")) screen_off_minutes = clampi(atoi(v), 0, 1440);
+    else if (!strcmp(k, "warp_pointer")) warp_pointer = parse_bool_value(v, warp_pointer);
     else if (!strcmp(k, "bar_position")) {
         if (!strcasecmp(v, "bottom")) barpos = BAR_BOTTOM;
         else barpos = BAR_TOP;

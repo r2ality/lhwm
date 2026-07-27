@@ -460,6 +460,10 @@ The default value, `0`, leaves it disabled. Set it above `0` to turn the monitor
 screen_off_minutes = 10
 ```
 
+`warp_pointer` defaults to `false`. This is the game-safe setting: NVWM does
+not synthesize mouse movement while changing focus or workspaces. Set it to
+`true` only if you prefer the cursor to jump to the newly focused window.
+
 NVWM applies this through `xset` at startup and when config is reloaded with `:w!`.
 
 Supported modifiers:
@@ -676,6 +680,9 @@ NVWM provides workspaces `1..9`.
 - each monitor keeps its own tree per workspace
 - switching workspace only shows windows from that workspace
 - focused windows can be moved to another workspace from keybinds
+- before hiding a workspace, NVWM clears focus from its visible client; this
+  makes fullscreen games stop receiving normal X11 keyboard/mouse input after
+  you leave their workspace
 
 Simple rules are supported in `config.conf`:
 
