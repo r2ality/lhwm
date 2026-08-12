@@ -242,10 +242,10 @@ U0 init_globals()
   numws = 9;
   gap = 8; bw = 2; barh = 24; barenabled = 1;
   barpadx = 10; baritemgap = 6; bartextpad = 8; barwsminw = 20;
-  cfocus = 0x5588ff; cnorm = 0x333333;
-  barbg = 0x111111; barfg = 0xeeeeee;
-  baraccentbg = 0x5588ff; baraccentfg = 0x111111;
-  barmutedfg = 0xaaaaaa;
+  cfocus = 0xFFFF55; cnorm = 0x00AAAA;
+  barbg = 0x0000AA; barfg = 0xFFFFFF;
+  baraccentbg = 0xFFFF55; baraccentfg = 0x0000AA;
+  barmutedfg = 0xFFFFFF;
   StrCpy(term, "st");
   StrCpy(barfontname, "9x15");
   StrCpy(barleftcfg, "workspaces");
@@ -1452,8 +1452,6 @@ I64 draw_workspace_section(U64 win, I64 x, I64 y)
     if (i == mons[barmon].curws) {
       bg = baraccentbg;
       fg = baraccentfg;
-    } else if (mons[barmon].tree[i]) {
-      fg = barfg;
     }
     curx += draw_tag_box(win, curx, y, part, bg, fg, barwsminw);
     curx += baritemgap;
@@ -1509,7 +1507,7 @@ I64 draw_bar_item(U64 win, I64 x, I64 y, I64 item)
     curx += draw_tag_box(win, curx, y, tmp, baraccentbg, baraccentfg, 0);
     if (mode == MODE_COMMAND && cmdline_len > 0) {
       curx += baritemgap;
-      curx += draw_tag_box(win, curx, y, cmdline, cnorm, barfg, 0);
+      curx += draw_tag_box(win, curx, y, cmdline, barbg, barfg, 0);
     }
     return curx;
   case BAR_ITEM_TITLE:
@@ -1518,7 +1516,7 @@ I64 draw_bar_item(U64 win, I64 x, I64 y, I64 item)
   case BAR_ITEM_MODE:
     return curx + draw_tag_box(win, curx, y, tmp, baraccentbg, baraccentfg, 0);
   case BAR_ITEM_BATTERY:
-    return curx + draw_tag_box(win, curx, y, tmp, cnorm, barfg, 0);
+    return curx + draw_tag_box(win, curx, y, tmp, barbg, barfg, 0);
   default:
     return curx;
   }
@@ -2675,7 +2673,7 @@ U0 draw_overview()
     overview_cell_rect(ws, &cx, &cy, &cw, &ch);
     sel = (ws == overview_sel);
     cur = (ws == m->curws);
-    XSetForeground(dpy, bargc, 0x1a1a1a);
+    XSetForeground(dpy, bargc, barbg);
     XFillRectangle(dpy, overview_pix, bargc, cx, cy, cw, ch);
 
     StrPrint(lbl, "%d", ws + 1);
@@ -3224,13 +3222,13 @@ U0 reset_config_defaults()
   baritemgap = 6;
   bartextpad = 8;
   barwsminw = 20;
-  cfocus = 0x5588ff;
-  cnorm = 0x333333;
-  barbg = 0x111111;
-  barfg = 0xeeeeee;
-  baraccentbg = 0x5588ff;
-  baraccentfg = 0x111111;
-  barmutedfg = 0xaaaaaa;
+  cfocus = 0xFFFF55;
+  cnorm = 0x00AAAA;
+  barbg = 0x0000AA;
+  barfg = 0xFFFFFF;
+  baraccentbg = 0xFFFF55;
+  baraccentfg = 0x0000AA;
+  barmutedfg = 0xFFFFFF;
   copystr(term, 128, "st");
   copystr(barfontname, 128, "9x15");
   copystr(barleftcfg, 128, "command,title,workspaces");
