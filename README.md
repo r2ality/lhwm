@@ -86,6 +86,14 @@ mkdir -p ~/.config/holywm
 cp config.conf ~/.config/holywm/config.conf
 ```
 
+To log into holywm from a display manager, register it in the greeter's
+session list (installs the `holywm-session` wrapper and the xsessions
+desktop entry):
+
+```bash
+make install-session
+```
+
 If hcc lives somewhere else, point the Makefile at it:
 
 ```bash

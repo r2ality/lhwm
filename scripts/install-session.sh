@@ -57,7 +57,7 @@ mkdir -p "$XSESSIONS"
 cat > "$XSESSIONS/holywm.desktop" <<EOF
 [Desktop Entry]
 Name=holywm
-Comment=Neovim Window Manager
+Comment=HolyC Window Manager
 Exec=$PREFIX/bin/holywm-session
 TryExec=$BIN
 Type=XSession

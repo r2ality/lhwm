@@ -27,7 +27,13 @@ uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(BIN)
 	rm -f $(DESTDIR)$(SYSCONFDIR)/holywm/config.conf
 
+# register holywm in the greeter's session list (SDDM/LightDM/GDM/greetd):
+# installs the holywm-session wrapper and the xsessions desktop entry;
+# re-runs itself through sudo/doas if needed
+install-session: $(BIN)
+	PREFIX=$(PREFIX) scripts/install-session.sh
+
 clean:
 	rm -f $(BIN)
 
-.PHONY: all install uninstall clean
+.PHONY: all install uninstall install-session clean
