@@ -1,4 +1,4 @@
-nvwm
+holywm
 *.o
 .claude-flow/
 tests/

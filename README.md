@@ -1,36 +1,53 @@
-# NVWM
+# holywm
 
-Vim-inspired tiling window manager for X11 with modal controls, workspaces, floating support, a configurable bar, and optional compositor effects.
+A BSP tiling window manager for X11 written in **HolyC**, compiled natively for
+Linux with the [holyc-lang](https://github.com/Jamesbarford/holyc-lang) `hcc`
+compiler and linked directly against Xlib. Fork of
+[nvwm](https://github.com/Vifuddyxg/nvwm), rebuilt line by line in HolyC —
+same features, same config format, different sacred language.
 
-NVWM uses a modal workflow:
+holywm uses a modal workflow:
 
 - `INSERT` for normal desktop input
 - `NORMAL` for window-manager actions
 - `COMMAND` for vim-style commands such as `:q!`
 
-Windows are managed in a tiling tree. New windows are attached near the focused one. Floating windows stay above tiled ones and can be moved or resized with `Super+mouse`. Multi-monitor setups are handled through Xinerama.
+Windows are managed in a tiling tree. New windows are attached near the focused
+one. Floating windows stay above tiled ones and can be moved or resized with
+`Super+mouse`. Multi-monitor setups are handled through Xinerama, with RandR
+hotplug, an XEmbed system tray in the bar, and an XComposite/XRender live
+workspace overview on `Super+z`.
+
+## How it is built
+
+There is no C compiler involved in holywm itself. `holywm.HC` is HolyC; the
+`xlib.HH` header declares the slice of Xlib/Xinerama/Xrandr/Xcomposite/Xrender
+and libc that the WM needs as `extern "c"` functions plus byte-exact class
+layouts for the X structs (generated and verified against the real C headers
+by `scripts/gen-abi.c`). `hcc` compiles that to x86_64 assembly and links it
+against the system X11 libraries.
+
+Quirks of the holyc-lang toolchain that this codebase works around (kept as
+comments where they bite):
+
+- `&local` miscompiles for typed-pointer locals (`U64 *`, `U8 **`): out-params
+  that return pointers go through a `U8 *` temp plus a postfix cast.
+- `StrPrint`'s `%s` path ReAllocs the destination as if heap-allocated, so any
+  formatting into a fixed buffer uses `copystr`/`stradd` instead.
+- Global symbol names longer than 25 characters get truncated in emitted
+  assembly operands by stock hcc (fixed upstream by bumping a buffer, but the
+  code keeps names short so a stock compiler works).
 
 ## Dependencies
 
-- `libX11`
-- `libXinerama`
-- C99 compiler
-- `make`
-- `git` if you clone the repository with `git clone`
+Build:
 
-Examples:
-
-- Arch Linux: `sudo pacman -S git libx11 libxinerama make`
-- Artix Linux: `sudo pacman -S git libx11 libxinerama make`
-- Void Linux: `sudo xbps-install git gcc make libX11-devel libxinerama-devel`
-- Gentoo: `emerge dev-vcs/git x11-libs/libX11 x11-libs/libXinerama`
-- Debian / Ubuntu: `sudo apt install git libx11-dev libxinerama-dev build-essential`
-- Fedora: `sudo dnf install git libX11-devel libXinerama-devel gcc make`
-- openSUSE: `sudo zypper install git libX11-devel libXinerama-devel gcc make`
-- Alpine: `sudo apk add git libx11-dev libxinerama-dev build-base`
-- NixOS / nix-shell: `nix-shell -p git gcc gnumake xorg.libX11 xorg.libXinerama`
-- FreeBSD: `doas pkg install git libX11 libXinerama`
-- OpenBSD: install the `xbase` and `xshare` sets; use `doas pkg_add git` if you clone with Git
+- [holyc-lang](https://github.com/Jamesbarford/holyc-lang) (`hcc`), built and
+  installed with its `tos` runtime library
+- a C toolchain for hcc itself and for assembling/linking (`gcc` or `clang`,
+  `make`, `cmake`)
+- X11 client libraries: `libX11`, `libXinerama`, `libXrandr`, `libXcomposite`,
+  `libXrender`
 
 Runtime tools used by the default config:
 
@@ -39,7 +56,7 @@ Runtime tools used by the default config:
 - one screenshot tool: `maim`, `scrot`, or ImageMagick's `import`
 - optional media tools if you uncomment those keybinds: `pactl`, `playerctl`, and `brightnessctl`
 
-You can avoid these runtime tools by changing the matching commands in `~/.config/nvwm/config.conf`.
+You can avoid these runtime tools by changing the matching commands in `~/.config/holywm/config.conf`.
 
 Session tools:
 
@@ -47,103 +64,44 @@ Session tools:
 - either `startx`/`xinit` or a display manager/greeter that can start X sessions
 - `dbus-run-session` if you use the recommended full-session examples below
 
-Install exactly one X server:
-
-- Xorg: use your distro's normal Xorg server package, usually named `xorg-server`, `xserver-xorg`, or part of the BSD X sets.
-- XLibre: use your distro's XLibre package if one exists.
-
-Do not install Xorg and XLibre just for NVWM. Pick one server, then run NVWM inside that X11 session.
-
 ## Full Install Example
 
-Minimal install:
+First the compiler:
 
 ```bash
-git clone https://github.com/Vifuddyxg/nvwm
-cd nvwm
+git clone https://github.com/Jamesbarford/holyc-lang
+cd holyc-lang
 make
+sudo make install        # installs hcc, tos.HH and libtos under /usr/local
+```
+
+Then holywm:
+
+```bash
+git clone https://github.com/Vifuddyxg/holywm
+cd holywm
+make                     # hcc holywm.HC -clibs='-lX11 ...' -o holywm
 sudo make install
-mkdir -p ~/.config/nvwm
-cp config.conf ~/.config/nvwm/config.conf
+mkdir -p ~/.config/holywm
+cp config.conf ~/.config/holywm/config.conf
 ```
 
-### NixOS
-
-For a temporary build shell:
+If hcc lives somewhere else, point the Makefile at it:
 
 ```bash
-nix-shell -p git gcc gnumake xorg.libX11 xorg.libXinerama
-make
-make install PREFIX="$HOME/.local" SYSCONFDIR="$HOME/.config"
+make HCC=~/.local/bin/hcc HCC_PREFIX=~/.local
 ```
 
-For a declarative NixOS setup, add the build/runtime tools you want to your system or user packages, then build NVWM from this repo:
-
-```nix
-environment.systemPackages = with pkgs; [
-  git
-  gcc
-  gnumake
-  dbus
-  xorg.libX11
-  xorg.libXinerama
-  xorg.xinit
-  xorg.xset
-  alacritty
-  rofi
-];
-```
-
-`sudo make install` writes to `/usr/local/bin` and `/etc/nvwm`.
-That is normal on many Unix systems, but on NixOS a per-user install such as `~/.local/bin/nvwm` is usually simpler unless you package NVWM as a derivation.
-
-### FreeBSD
-
-FreeBSD installs X11 headers and libraries under `/usr/local`, so pass those paths when building:
-
-```sh
-doas pkg install git libX11 libXinerama
-make \
-  CPPFLAGS="-I/usr/local/include" \
-  LDFLAGS="-L/usr/local/lib"
-doas make install
-mkdir -p ~/.config/nvwm
-cp config.conf ~/.config/nvwm/config.conf
-```
-
-You can change the install location with `PREFIX=/path` or stage a package with `DESTDIR=/path`.
-The Makefile does not require GNU `install -D`.
-
-Manual install is also straightforward:
-
-```sh
-doas mkdir -p /usr/local/bin /etc/nvwm
-doas install -m 755 nvwm /usr/local/bin/nvwm
-doas install -m 644 config.conf /etc/nvwm/config.conf
-```
-
-### OpenBSD
-
-OpenBSD keeps X11 under `/usr/X11R6`, so pass those paths when building:
-
-```sh
-make \
-  CPPFLAGS="-I/usr/X11R6/include" \
-  LDFLAGS="-L/usr/X11R6/lib"
-doas make install
-mkdir -p ~/.config/nvwm
-cp config.conf ~/.config/nvwm/config.conf
-```
-
-If your OpenBSD install does not include X, install the `xbase` and `xshare` sets first.
-The Makefile does not require GNU `install -D`; the manual install form shown in the FreeBSD section works too.
+holyc-lang targets Linux (and macOS) on x86_64/arm64; the BSDs are not
+supported by the compiler, so unlike nvwm this fork is effectively
+Linux-only.
 
 ### Portability Notes
 
-NVWM is an X11 window manager. It is intended to run inside an X session, not as a Wayland compositor.
+holywm is an X11 window manager. It is intended to run inside an X session, not as a Wayland compositor.
 
-NVWM works with Xorg and XLibre, because XLibre is an X11 server forked from X.Org Server with a compatibility goal.
-NVWM uses normal Xlib/EWMH behavior and Xinerama for monitor geometry. If Xinerama is not active, NVWM falls back to one monitor using the root window size.
+holywm works with Xorg and XLibre, because XLibre is an X11 server forked from X.Org Server with a compatibility goal.
+holywm uses normal Xlib/EWMH behavior and Xinerama for monitor geometry. If Xinerama is not active, holywm falls back to one monitor using the root window size.
 
 The `battery` bar item currently reads Linux-style battery information from `/sys/class/power_supply`.
 On NixOS it works the same as other Linux distributions; on FreeBSD and OpenBSD it may stay empty unless that code is adapted for the platform.
@@ -153,9 +111,9 @@ Install `xset` if you want that feature on a minimal system, or leave `screen_of
 
 ### Xserver Sessions: Xorg and XLibre
 
-NVWM runs inside a normal X11 session. Install one X11 server, not both: the traditional Xorg server or XLibre, an alternative X11 server implementation forked from X.Org Server.
+holywm runs inside a normal X11 session. Install one X11 server, not both: the traditional Xorg server or XLibre, an alternative X11 server implementation forked from X.Org Server.
 
-NVWM does not need a separate build for XLibre. Build NVWM against the normal X11 client libraries (`libX11` and `libXinerama`) and run it inside the XLibre session.
+holywm does not need a separate build for XLibre. Build holywm against the normal X11 client libraries (`libX11` and `libXinerama`) and run it inside the XLibre session.
 
 If your distribution packages XLibre, prefer those packages. If not, use your distribution's normal Xorg packages. The XLibre project tracks package availability on its wiki:
 
@@ -164,43 +122,43 @@ If your distribution packages XLibre, prefer those packages. If not, use your di
 Minimal `~/.xinitrc`:
 
 ```sh
-exec nvwm
+exec holywm
 ```
 
 Recommended `~/.xinitrc` for a full session:
 
 ```sh
 exec dbus-run-session sh -lc '
-export XDG_CURRENT_DESKTOP=nvwm
-export XDG_SESSION_DESKTOP=nvwm
-export DESKTOP_SESSION=nvwm
+export XDG_CURRENT_DESKTOP=holywm
+export XDG_SESSION_DESKTOP=holywm
+export DESKTOP_SESSION=holywm
 export XCURSOR_THEME=Adwaita
 export XCURSOR_SIZE=24
 command -v pipewire >/dev/null 2>&1 && pipewire &
 command -v wireplumber >/dev/null 2>&1 && wireplumber &
-exec nvwm
+exec holywm
 '
 ```
 
 The minimal form may work on some systems, but the `dbus-run-session` variant is the safer default if you want audio/session services to behave normally.
 
-If you build XLibre from source into a separate prefix, test that server first, then start NVWM on it:
+If you build XLibre from source into a separate prefix, test that server first, then start holywm on it:
 
 ```sh
 XSERVER="$HOME/opt/xlibre/bin/X"
-startx "$HOME/.local/bin/nvwm" -- "$XSERVER" :1
+startx "$HOME/.local/bin/holywm" -- "$XSERVER" :1
 ```
 
 If your `startx` does not accept a server path directly, use `xinit`:
 
 ```sh
-xinit "$HOME/.local/bin/nvwm" -- "$HOME/opt/xlibre/bin/X" :1
+xinit "$HOME/.local/bin/holywm" -- "$HOME/opt/xlibre/bin/X" :1
 ```
 
 For the normal installed system server, keep the regular `~/.xinitrc`:
 
 ```sh
-exec nvwm
+exec holywm
 ```
 
 Then run:
@@ -219,62 +177,62 @@ needed):
 scripts/install-session.sh
 ```
 
-It asks for `sudo`/`doas` on its own and NVWM shows up in your greeter's
+It asks for `sudo`/`doas` on its own and holywm shows up in your greeter's
 session list at the next login screen. `PREFIX=` and `XSESSIONS=` override the
 default `/usr/local` and `/usr/share/xsessions` locations.
 
 If you prefer to set it up by hand, one simple setup looks like this.
-Use a session wrapper script. Do not point the greeter directly at `nvwm`, or you may end up with a broken login session.
+Use a session wrapper script. Do not point the greeter directly at `holywm`, or you may end up with a broken login session.
 
-`/usr/share/xsessions/nvwm.desktop`
+`/usr/share/xsessions/holywm.desktop`
 
 ```ini
 [Desktop Entry]
-Name=NVWM
+Name=holywm
 Comment=Neovim Window Manager
-Exec=/usr/local/bin/nvwm-session
+Exec=/usr/local/bin/holywm-session
 Type=XSession
-DesktopNames=nvwm
+DesktopNames=holywm
 ```
 
-`/usr/local/bin/nvwm-session`
+`/usr/local/bin/holywm-session`
 
 ```sh
 #!/bin/sh
-export XDG_CURRENT_DESKTOP=nvwm
-export XDG_SESSION_DESKTOP=nvwm
+export XDG_CURRENT_DESKTOP=holywm
+export XDG_SESSION_DESKTOP=holywm
 export XDG_SESSION_TYPE=x11
 
 exec dbus-run-session sh -lc '
   command -v pipewire >/dev/null 2>&1 && pipewire &
   command -v wireplumber >/dev/null 2>&1 && wireplumber &
-  exec nvwm
+  exec holywm
 '
 ```
 
 Make the session launcher executable:
 
 ```sh
-sudo chmod +x /usr/local/bin/nvwm-session
+sudo chmod +x /usr/local/bin/holywm-session
 ```
 
 If you use `greetd` with `tuigreet`, that is enough.
-`tuigreet` will pick up `NVWM` automatically from `/usr/share/xsessions/nvwm.desktop`.
+`tuigreet` will pick up `holywm` automatically from `/usr/share/xsessions/holywm.desktop`.
 
 Notes:
 
-- NVWM requires X11 client libraries at build time, not XLibre server headers.
+- holywm requires X11 client libraries at build time, not XLibre server headers.
 - Multi-monitor support depends on the Xinerama extension being available and active in the running X server.
 - Existing Xorg session wrappers and `.desktop` files usually work unchanged if the display manager starts XLibre as the system X server.
 
 If you also want transparency, blur, shadows, or animations, install a compositor such as `picom`.
 
 `picom` support is optional and experimental.
-It is not required for NVWM and is not part of the default setup.
+It is not required for holywm and is not part of the default setup.
 Depending on your hardware, driver, GPU, and `picom` build, blur or animations may behave differently.
 
-If you want the lightest NVWM setup, do not install `picom` at all.
-NVWM works fine without a compositor.
+If you want the lightest holywm setup, do not install `picom` at all.
+holywm works fine without a compositor.
 
 ### Choosing a `picom` build
 
@@ -297,13 +255,13 @@ Important:
 - If your distro package provides standard `picom`, the safest default is:
 
 ```conf
-autostart = picom --config ~/.config/nvwm/picom.conf
+autostart = picom --config ~/.config/holywm/picom.conf
 ```
 
 
 ### Option 1: No `picom`
 
-Use this if you want the lightest NVWM setup:
+Use this if you want the lightest holywm setup:
 
 - Do not copy `picom.conf`
 - Do not add any `autostart = picom ...` line
@@ -328,7 +286,7 @@ Install:
 Autostart:
 
 ```conf
-autostart = picom --config ~/.config/nvwm/picom.conf
+autostart = picom --config ~/.config/holywm/picom.conf
 ```
 
 If you use plain `picom`, keep the config focused on blur, transparency, shadows, rounded corners, and fades.
@@ -388,14 +346,14 @@ ninja -C build install
 ```
 
 This fork installs launcher symlinks such as `~/opt/picom-ftlabs/bin/compton` and `~/opt/picom-ftlabs/bin/compton-trans`.
-Use the `compton` launcher from that prefix in your NVWM autostart line.
+Use the `compton` launcher from that prefix in your holywm autostart line.
 
 ### Option 4: Your own fork
 
 If you want to test a custom build separately before making it your default compositor, install it to a separate prefix and point `autostart` at that exact binary:
 
 ```conf
-autostart = ~/opt/picom-custom/bin/compton --config ~/.config/nvwm/picom.conf
+autostart = ~/opt/picom-custom/bin/compton --config ~/.config/holywm/picom.conf
 ```
 
 This makes it easy to compare multiple `picom` builds without replacing the system package or overwriting another fork you already use.
@@ -405,38 +363,38 @@ This makes it easy to compare multiple `picom` builds without replacing the syst
 Once you have installed the `picom` build you want, copy the sample config:
 
 ```bash
-cd ~/nvwm
-mkdir -p ~/.config/nvwm
-cp picom.conf ~/.config/nvwm/picom.conf
+cd ~/holywm
+mkdir -p ~/.config/holywm
+cp picom.conf ~/.config/holywm/picom.conf
 ```
 
-Then enable it in `~/.config/nvwm/config.conf`.
+Then enable it in `~/.config/holywm/config.conf`.
 
 Plain `picom`:
 
 ```conf
-autostart = picom --config ~/.config/nvwm/picom.conf
+autostart = picom --config ~/.config/holywm/picom.conf
 ```
 
 `FT-Labs-picom`:
 
 ```conf
-autostart = ~/opt/picom-ftlabs/bin/compton --config ~/.config/nvwm/picom.conf
+autostart = ~/opt/picom-ftlabs/bin/compton --config ~/.config/holywm/picom.conf
 ```
 
 Your own fork:
 
 ```conf
-autostart = ~/opt/picom-custom/bin/compton --config ~/.config/nvwm/picom.conf
+autostart = ~/opt/picom-custom/bin/compton --config ~/.config/holywm/picom.conf
 ```
 
 ## Configuration
 
-NVWM loads config files in this order:
+holywm loads config files in this order:
 
-- `/etc/nvwm/config.conf`
+- `/etc/holywm/config.conf`
 - `./config.conf`
-- `~/.config/nvwm/config.conf`
+- `~/.config/holywm/config.conf`
 
 Later files override earlier ones.
 
@@ -472,11 +430,11 @@ The default value, `0`, leaves it disabled. Set it above `0` to turn the monitor
 screen_off_minutes = 10
 ```
 
-`warp_pointer` defaults to `false`. This is the game-safe setting: NVWM does
+`warp_pointer` defaults to `false`. This is the game-safe setting: holywm does
 not synthesize mouse movement while changing focus or workspaces. Set it to
 `true` only if you prefer the cursor to jump to the newly focused window.
 
-NVWM applies this through `xset` at startup and when config is reloaded with `:w!`.
+holywm applies this through `xset` at startup and when config is reloaded with `:w!`.
 
 Supported modifiers:
 
@@ -544,7 +502,7 @@ into the bar, so you can see what is running and act on it.
 - In the default config the tray sits in `bar_right` just left of the battery:
   `bar_right = tray,battery,clock`.
 - The tray lives on the bar of the primary (first) monitor.
-- Remove `tray` from the bar sections to disable the tray entirely; NVWM then
+- Remove `tray` from the bar sections to disable the tray entirely; holywm then
   does not claim the `_NET_SYSTEM_TRAY` selection and a standalone tray such as
   `stalonetray` can own it instead.
 
@@ -556,13 +514,13 @@ Bar colors are hex RGB values. You can write them with or without `#`, for examp
 - `bar_accent_fg`: active workspace / mode text
 - `bar_muted_fg`: inactive workspace / muted text
 
-Reload NVWM with `:w!` after changing colors.
+Reload holywm with `:w!` after changing colors.
 
 ### External Bars
 
-NVWM detects external bars automatically. Any X11 bar that sets `_NET_WM_WINDOW_TYPE_DOCK` (polybar, tint2, and most common bars do this by default) is recognized as a dock window. NVWM reads the bar's reserved area from its `_NET_WM_STRUT_PARTIAL` or `_NET_WM_STRUT` hints and adjusts the tiling work area accordingly, so tiled windows never overlap the bar.
+holywm detects external bars automatically. Any X11 bar that sets `_NET_WM_WINDOW_TYPE_DOCK` (polybar, tint2, and most common bars do this by default) is recognized as a dock window. holywm reads the bar's reserved area from its `_NET_WM_STRUT_PARTIAL` or `_NET_WM_STRUT` hints and adjusts the tiling work area accordingly, so tiled windows never overlap the bar.
 
-This works on both top and bottom simultaneously and is independent of where the internal NVWM bar sits. For example, the internal bar can be at the bottom while polybar sits at the top — NVWM reserves space for both.
+This works on both top and bottom simultaneously and is independent of where the internal holywm bar sits. For example, the internal bar can be at the bottom while polybar sits at the top — holywm reserves space for both.
 
 **Using only an external bar (replace the built-in bar)**
 
@@ -573,7 +531,7 @@ bar_enabled = false
 autostart = polybar main
 ```
 
-No other setting is needed. NVWM detects polybar's height automatically when it maps.
+No other setting is needed. holywm detects polybar's height automatically when it maps.
 
 **Using an external bar alongside the built-in bar**
 
@@ -585,11 +543,11 @@ bar_position = bottom
 autostart = polybar main
 ```
 
-NVWM reserves space at the bottom for its own bar and at the top for polybar.
+holywm reserves space at the bottom for its own bar and at the top for polybar.
 
-**Bars started outside the NVWM autostart**
+**Bars started outside the holywm autostart**
 
-If the external bar is launched from `.xinitrc` or a display manager session script before NVWM starts, NVWM scans all existing windows at startup and picks it up automatically.
+If the external bar is launched from `.xinitrc` or a display manager session script before holywm starts, holywm scans all existing windows at startup and picks it up automatically.
 
 **`external_bar_height` override**
 
@@ -599,7 +557,7 @@ You normally do not need this setting. Use it only if the bar does not advertise
 external_bar_height = 30
 ```
 
-Set it to `0` (the default) to let NVWM auto-detect from the bar's own hints. Setting it to a positive number overrides auto-detection for the side matching `bar_position`.
+Set it to `0` (the default) to let holywm auto-detect from the bar's own hints. Setting it to a positive number overrides auto-detection for the side matching `bar_position`.
 
 **Fullscreen behavior**
 
@@ -614,7 +572,7 @@ Dock windows are kept above tiled windows at all times. When a client enters EWM
 - `xmobar`: good if you like a text/status oriented bar.
 - `dzen2`: old but simple and lightweight.
 
-Install only the bar you plan to use. NVWM does not require any external bar.
+Install only the bar you plan to use. holywm does not require any external bar.
 
 ## Modes
 
@@ -644,7 +602,7 @@ Example:
 
 Command mode supports three forms:
 
-- `:command` for internal NVWM commands
+- `:command` for internal holywm commands
 - `/command` to run a shell command in the background
 - `:t command` to run a shell command inside the configured terminal
 
@@ -671,7 +629,7 @@ The exact behavior depends on your config, but the default setup includes:
 | Key | Action |
 | --- | --- |
 | `Super+q` | Open terminal in `INSERT` mode |
-| `Super+Shift+q` | Quit NVWM |
+| `Super+Shift+q` | Quit holywm |
 | `Super+Escape` | Enter `NORMAL` mode |
 | `i` | Return to `INSERT` mode |
 | `q` | Open terminal in `NORMAL` mode |
@@ -688,7 +646,7 @@ The exact behavior depends on your config, but the default setup includes:
 | `Super+v` | Toggle floating |
 | `Super+Button1` | Move floating window |
 | `Super+Button3` | Resize floating window |
-| `:q!` | Quit NVWM |
+| `:q!` | Quit holywm |
 | `:w!` | Reload config |
 
 ## Floating
@@ -706,12 +664,12 @@ Dialogs and transient windows are floated automatically.
 
 ## Workspaces
 
-NVWM provides workspaces `1..9`.
+holywm provides workspaces `1..9`.
 
 - each monitor keeps its own tree per workspace
 - switching workspace only shows windows from that workspace
 - focused windows can be moved to another workspace from keybinds
-- before hiding a workspace, NVWM clears focus from its visible client; this
+- before hiding a workspace, holywm clears focus from its visible client; this
   makes fullscreen games stop receiving normal X11 keyboard/mouse input after
   you leave their workspace
 
@@ -735,8 +693,8 @@ Each monitor keeps its own independent layout tree.
 
 ## Notes
 
-- config files are loaded from `/etc/nvwm/config.conf`, then `./config.conf`, then `~/.config/nvwm/config.conf`
-- after `sudo make install`, copy `config.conf` into `~/.config/nvwm/config.conf` if you want a per-user config
+- config files are loaded from `/etc/holywm/config.conf`, then `./config.conf`, then `~/.config/holywm/config.conf`
+- after `sudo make install`, copy `config.conf` into `~/.config/holywm/config.conf` if you want a per-user config
 - use `make install PREFIX="$HOME/.local" SYSCONFDIR="$HOME/.config"` for a per-user install
 - media and brightness keys are optional
 - `Super+f` uses the WM fullscreen mode, while applications can still request real fullscreen through EWMH
