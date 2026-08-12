@@ -706,3 +706,4 @@ Each monitor keeps its own independent layout tree.
 - use `make install PREFIX="$HOME/.local" SYSCONFDIR="$HOME/.config"` for a per-user install
 - media and brightness keys are optional
 - `Super+f` uses the WM fullscreen mode, while applications can still request real fullscreen through EWMH
+# holywm
