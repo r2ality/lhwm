@@ -30,7 +30,12 @@
 #define MAXWS         500   /* hard cap (array size); active count is numws */
 #define MAXAUTOSTART 8
 #define MAXDOCKS     16
+#define MAXTRAYICONS 16
 #define CMDLINE_MAX 256
+
+/* XEmbed system tray (freedesktop System Tray spec) */
+#define SYSTEM_TRAY_REQUEST_DOCK 0
+#define XEMBED_EMBEDDED_NOTIFY   0
 
 typedef struct Node Node;
 struct Node {
@@ -189,6 +194,17 @@ static Atom atom_net_wm_strut_partial;
 static Atom atom_wm_protocols;
 static Atom atom_wm_delete_window;
 static Atom atom_net_wm_pid;
+static Atom atom_net_system_tray;
+static Atom atom_net_system_tray_opcode;
+static Atom atom_net_system_tray_orientation;
+static Atom atom_xembed;
+static Atom atom_manager;
+/* system tray: icons dock into the bar of monitor `traymon` (the primary) */
+static Window trayicons[MAXTRAYICONS];
+static int ntrayicons;
+static Window trayselwin;      /* persistent _NET_SYSTEM_TRAY_S<n> selection owner */
+static int traymon = 0;
+static int tray_draw_x = -1;   /* bar-local x of the tray slot, set while drawing */
 static char cached_title[256];
 static char cmdline[CMDLINE_MAX];
 static int cmdline_len;
@@ -241,6 +257,9 @@ static void destroybars(void);
 static void compute_dock_struts(int *out_top, int *out_bottom);
 static void sync_dock_stack(void);
 static Node *find_real_fullscreen_leaf(Node *n);
+static int bar_uses_item(const char *item);
+static void setup_tray(void);
+static void tray_release_icons(void);
 static unsigned long hcol(const char *s) {
     return strtoul(*s == '#' ? s + 1 : s, NULL, 16);
 }
@@ -544,6 +563,113 @@ static void update_battery(void) {
         else snprintf(batterystr, sizeof batterystr, "BAT %s%%", cap);
         return;
     }
+}
+
+/* ---- XEmbed system tray ----
+   NVWM owns the _NET_SYSTEM_TRAY_S<screen> selection; apps that minimize to a
+   tray (nm-applet, telegram, discord, ...) dock their icon window here and it
+   is reparented into the bar. Clicks land on the icon's own window, so the
+   app's tray menu -- including its Quit entry -- works natively. */
+
+static int tray_icon_size(void) {
+    int s = barh - 6;
+    return s < 8 ? 8 : s;
+}
+
+static int tray_index(Window win) {
+    for (int i = 0; i < ntrayicons; i++)
+        if (trayicons[i] == win) return i;
+    return -1;
+}
+
+static int tray_width(void) {
+    if (!ntrayicons) return 0;
+    return ntrayicons * tray_icon_size() + (ntrayicons - 1) * baritemgap;
+}
+
+/* park icons off-screen when the tray slot was not drawn this pass */
+static void tray_layout_icons(void) {
+    int sz = tray_icon_size();
+    int y = (barh - sz) / 2;
+    int x = tray_draw_x;
+    if (!ntrayicons || traymon >= nmons || !mons[traymon].barwin) return;
+    if (x < 0) x = -(sz + baritemgap) * ntrayicons;
+    for (int i = 0; i < ntrayicons; i++) {
+        XMoveResizeWindow(dpy, trayicons[i], x, y, sz, sz);
+        x += sz + baritemgap;
+    }
+}
+
+static void tray_dock_icon(Window win) {
+    XEvent ev;
+    if (!win || tray_index(win) >= 0 || ntrayicons >= MAXTRAYICONS) return;
+    if (traymon >= nmons || !mons[traymon].barwin) return;
+    trayicons[ntrayicons++] = win;
+    XSelectInput(dpy, win, StructureNotifyMask);
+    XReparentWindow(dpy, win, mons[traymon].barwin, 0, 0);
+    XSetWindowBackground(dpy, win, barbg);
+    memset(&ev, 0, sizeof ev);
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = win;
+    ev.xclient.message_type = atom_xembed;
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = CurrentTime;
+    ev.xclient.data.l[1] = XEMBED_EMBEDDED_NOTIFY;
+    ev.xclient.data.l[3] = (long)mons[traymon].barwin;
+    XSendEvent(dpy, win, False, NoEventMask, &ev);
+    XMapWindow(dpy, win);
+    drawbars();
+}
+
+static void tray_remove_icon(Window win) {
+    int idx = tray_index(win);
+    if (idx < 0) return;
+    memmove(&trayicons[idx], &trayicons[idx + 1],
+        (size_t)(ntrayicons - idx - 1) * sizeof trayicons[0]);
+    ntrayicons--;
+    drawbars();
+}
+
+/* hand every icon back to the root window and drop the tray selection; used
+   before the bar window is destroyed (icons are its children and would die
+   with it) and on exit. Re-acquiring later broadcasts MANAGER again, so tray
+   apps re-dock on their own. */
+static void tray_release_icons(void) {
+    for (int i = 0; i < ntrayicons; i++) {
+        XSelectInput(dpy, trayicons[i], NoEventMask);
+        XUnmapWindow(dpy, trayicons[i]);
+        XReparentWindow(dpy, trayicons[i], root, 0, 0);
+    }
+    ntrayicons = 0;
+    tray_draw_x = -1;
+    if (trayselwin) {
+        XDestroyWindow(dpy, trayselwin);
+        trayselwin = 0;
+    }
+}
+
+static void setup_tray(void) {
+    XEvent ev;
+    if (!barenabled || !bar_uses_item("tray")) return;
+    if (!trayselwin) {
+        unsigned long orient = 0;   /* horizontal */
+        trayselwin = XCreateSimpleWindow(dpy, root, -1, -1, 1, 1, 0, 0, 0);
+        XChangeProperty(dpy, trayselwin, atom_net_system_tray_orientation,
+            XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&orient, 1);
+    }
+    if (XGetSelectionOwner(dpy, atom_net_system_tray) == trayselwin) return;
+    XSetSelectionOwner(dpy, atom_net_system_tray, trayselwin, CurrentTime);
+    if (XGetSelectionOwner(dpy, atom_net_system_tray) != trayselwin) return;
+    /* announce the new tray so running apps dock their icons */
+    memset(&ev, 0, sizeof ev);
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = root;
+    ev.xclient.message_type = atom_manager;
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = CurrentTime;
+    ev.xclient.data.l[1] = (long)atom_net_system_tray;
+    ev.xclient.data.l[2] = (long)trayselwin;
+    XSendEvent(dpy, root, False, StructureNotifyMask, &ev);
 }
 
 static int monforpt(int x, int y) {
@@ -974,7 +1100,8 @@ typedef enum {
     BAR_ITEM_TITLE,
     BAR_ITEM_CLOCK,
     BAR_ITEM_BATTERY,
-    BAR_ITEM_MODE
+    BAR_ITEM_MODE,
+    BAR_ITEM_TRAY
 } BarItem;
 
 static BarItem parse_bar_item(const char *name) {
@@ -984,6 +1111,7 @@ static BarItem parse_bar_item(const char *name) {
     if (!strcasecmp(name, "clock")) return BAR_ITEM_CLOCK;
     if (!strcasecmp(name, "battery")) return BAR_ITEM_BATTERY;
     if (!strcasecmp(name, "mode")) return BAR_ITEM_MODE;
+    if (!strcasecmp(name, "tray")) return BAR_ITEM_TRAY;
     return BAR_ITEM_NONE;
 }
 
@@ -1048,6 +1176,7 @@ static int bar_item_width(BarItem item) {
     char tmp[256];
 
     if (item == BAR_ITEM_WORKSPACES) return workspace_section_width();
+    if (item == BAR_ITEM_TRAY) return barmon == traymon ? tray_width() : 0;
     build_bar_item_text(item, tmp, sizeof tmp);
     if (!tmp[0]) return 0;
 
@@ -1070,6 +1199,12 @@ static int draw_bar_item(Window win, int x, int y, BarItem item) {
     int curx = x;
 
     if (item == BAR_ITEM_WORKSPACES) return draw_workspace_section(win, x, y);
+    if (item == BAR_ITEM_TRAY) {
+        /* nothing to paint: the icons are child windows of the bar, moved into
+           this slot after the bar pixmap is copied (tray_layout_icons) */
+        if (barmon == traymon) tray_draw_x = curx;
+        return curx + bar_item_width(BAR_ITEM_TRAY);
+    }
 
     build_bar_item_text(item, tmp, sizeof tmp);
     if (!tmp[0]) return curx;
@@ -1135,8 +1270,11 @@ static void drawbar(int mi) {
         m->barpix = XCreatePixmap(dpy, m->barwin, m->w, barh, DefaultDepth(dpy, DefaultScreen(dpy)));
 
     int leftx = barpadx, centx, rightx, leftw;
-    int centerw = section_width(barcentercfg);
-    int rightw = section_width(barrightcfg);
+    int centerw, rightw;
+
+    if (mi == traymon) tray_draw_x = -1;
+    centerw = section_width(barcentercfg);
+    rightw = section_width(barrightcfg);
 
     XSetForeground(dpy, bargc, barbg);
     XFillRectangle(dpy, m->barpix, bargc, 0, 0, m->w, barh);
@@ -1150,6 +1288,7 @@ static void drawbar(int mi) {
         draw_section(m->barpix, centx, 0, barcentercfg);
 
     XCopyArea(dpy, m->barpix, m->barwin, bargc, 0, 0, m->w, barh, 0, 0);
+    if (mi == traymon) tray_layout_icons();
 }
 
 static int bar_uses_item(const char *item) {
@@ -1523,6 +1662,15 @@ static void initatoms(void) {
     atom_wm_protocols = XInternAtom(dpy, "WM_PROTOCOLS", False);
     atom_wm_delete_window = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     atom_net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", False);
+    {
+        char trayname[32];
+        snprintf(trayname, sizeof trayname, "_NET_SYSTEM_TRAY_S%d", DefaultScreen(dpy));
+        atom_net_system_tray = XInternAtom(dpy, trayname, False);
+    }
+    atom_net_system_tray_opcode = XInternAtom(dpy, "_NET_SYSTEM_TRAY_OPCODE", False);
+    atom_net_system_tray_orientation = XInternAtom(dpy, "_NET_SYSTEM_TRAY_ORIENTATION", False);
+    atom_xembed = XInternAtom(dpy, "_XEMBED", False);
+    atom_manager = XInternAtom(dpy, "MANAGER", False);
 }
 
 static void setup_wm_check(void) {
@@ -2793,6 +2941,7 @@ static void reloadwm(void) {
     setupbars();
     scandocks();
     setupbars();
+    setup_tray();
     retile();
     if (mon_focused(curmon)) setfocus(curmon, mon_focused(curmon), 0);
     else update_active_window();
@@ -3194,6 +3343,7 @@ static int handle_normal_key(XKeyEvent *kev, KeySym sym) {
 }
 
 static void destroybars(void) {
+    tray_release_icons();   /* icons are barwin children; hand them back first */
     for (int i = 0; i < nmons; i++) {
         if (mons[i].barpix) {
             XFreePixmap(dpy, mons[i].barpix);
@@ -3253,6 +3403,7 @@ static void setupbars(void) {
 
         if (!barenabled || barh <= 0) {
             if (m->barwin) {
+                if (i == traymon) tray_release_icons();
                 XDestroyWindow(dpy, m->barwin);
                 m->barwin = 0;
             }
@@ -3324,14 +3475,20 @@ int main(int argc, char **argv) {
     setupbars();
     scandocks();
     setupbars();
+    setup_tray();   /* before autostart, so autostarted tray apps find it */
     run_autostart();
 
-    XGrabButton(dpy, Button1, MOD, root, False,
-        ButtonPressMask | ButtonReleaseMask,
-        GrabModeAsync, GrabModeAsync, None, None);
-    XGrabButton(dpy, Button3, MOD, root, False,
-        ButtonPressMask | ButtonReleaseMask,
-        GrabModeAsync, GrabModeAsync, None, None);
+    /* grab with every lock combination: X matches modifier state exactly,
+       so NumLock/CapsLock would otherwise swallow the drag */
+    {
+        unsigned int locks[] = { 0, LockMask, numlockmask, numlockmask | LockMask };
+        int dragbtns[] = { Button1, Button3 };
+        for (int b = 0; b < 2; b++)
+            for (int l = 0; l < 4; l++)
+                XGrabButton(dpy, dragbtns[b], MOD | locks[l], root, False,
+                    ButtonPressMask | ButtonReleaseMask,
+                    GrabModeAsync, GrabModeAsync, None, None);
+    }
 
     /* scroll wheel: MOD = switch workspace, MOD+Ctrl = move focused window
        to prev/next workspace and follow it */
@@ -3438,6 +3595,7 @@ int main(int argc, char **argv) {
             break;
 
         case DestroyNotify:
+            tray_remove_icon(ev.xdestroywindow.window);
             remove_dock_window(ev.xdestroywindow.window);
             removewin(ev.xdestroywindow.window);
             retile();
@@ -3447,7 +3605,12 @@ int main(int argc, char **argv) {
         case UnmapNotify:
             {
                 int mi = 0, ws = 0;
-                Node *n = findleaf_any(ev.xunmap.window, &mi, &ws);
+                Node *n;
+                if (tray_index(ev.xunmap.window) >= 0) {
+                    tray_remove_icon(ev.xunmap.window);
+                    break;
+                }
+                n = findleaf_any(ev.xunmap.window, &mi, &ws);
                 if (!n) remove_dock_window(ev.xunmap.window);
                 if (n) {
                     if (n->ignore_unmap > 0) {
@@ -3462,6 +3625,26 @@ int main(int argc, char **argv) {
                     retile();
                     if (mon_focused(curmon)) setfocus(curmon, mon_focused(curmon), 0);
                 }
+            }
+            break;
+
+        case ReparentNotify:
+            /* another tray (or the app itself) pulled the icon out of our bar */
+            if (tray_index(ev.xreparent.window) >= 0 &&
+                    (traymon >= nmons || ev.xreparent.parent != mons[traymon].barwin))
+                tray_remove_icon(ev.xreparent.window);
+            break;
+
+        case ConfigureNotify:
+            /* icons resizing themselves are pushed back into their slot */
+            if (tray_index(ev.xconfigure.window) >= 0) tray_layout_icons();
+            break;
+
+        case SelectionClear:
+            if (trayselwin && ev.xselectionclear.window == trayselwin &&
+                    ev.xselectionclear.selection == atom_net_system_tray) {
+                tray_release_icons();
+                drawbars();
             }
             break;
 
@@ -3497,6 +3680,11 @@ int main(int argc, char **argv) {
             break;
 
         case ClientMessage:
+            if (ev.xclient.message_type == atom_net_system_tray_opcode) {
+                if (ev.xclient.data.l[1] == SYSTEM_TRAY_REQUEST_DOCK)
+                    tray_dock_icon((Window)ev.xclient.data.l[2]);
+                break;
+            }
             if (ev.xclient.message_type == atom_net_current_desktop) {
                 switch_workspace((int)ev.xclient.data.l[0]);
                 break;

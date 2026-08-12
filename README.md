@@ -211,7 +211,19 @@ startx
 
 #### Greeter / XSession
 
-If you want to add NVWM to your greeter, one simple setup looks like this.
+The quickest way is the bundled installer, which does the whole setup below in
+one step (session wrapper + xsessions entry, and installs the binary first if
+needed):
+
+```sh
+scripts/install-session.sh
+```
+
+It asks for `sudo`/`doas` on its own and NVWM shows up in your greeter's
+session list at the next login screen. `PREFIX=` and `XSESSIONS=` override the
+default `/usr/local` and `/usr/share/xsessions` locations.
+
+If you prefer to set it up by hand, one simple setup looks like this.
 Use a session wrapper script. Do not point the greeter directly at `nvwm`, or you may end up with a broken login session.
 
 `/usr/share/xsessions/nvwm.desktop`
@@ -496,13 +508,14 @@ Available elements:
 - `battery`
 - `clock`
 - `mode`
+- `tray`
 
 Example:
 
 ```conf
 bar_left   = command,title,workspaces
 bar_center =
-bar_right  = battery,clock
+bar_right  = tray,battery,clock
 bar_enabled = true
 bar_height = 24
 bar_position = bottom
@@ -516,6 +529,24 @@ bar_accent_bg = 7aa2f7
 bar_accent_fg = 1a1b26
 bar_muted_fg = 565f89
 ```
+
+### System Tray
+
+The `tray` bar element is an XEmbed system tray (the freedesktop System Tray
+specification). Applications that keep running in the background — `nm-applet`,
+Telegram, Discord, `blueman-applet`, volume/battery applets — dock their icon
+into the bar, so you can see what is running and act on it.
+
+- Icons appear in the order applications dock and take `bar_height - 6` pixels.
+- Clicks go straight to the application's own icon window, so left-click and
+  right-click open the app's native tray menu — including its Quit entry, which
+  is how you close a background app from the tray.
+- In the default config the tray sits in `bar_right` just left of the battery:
+  `bar_right = tray,battery,clock`.
+- The tray lives on the bar of the primary (first) monitor.
+- Remove `tray` from the bar sections to disable the tray entirely; NVWM then
+  does not claim the `_NET_SYSTEM_TRAY` selection and a standalone tray such as
+  `stalonetray` can own it instead.
 
 Bar colors are hex RGB values. You can write them with or without `#`, for example `7aa2f7` or `#7aa2f7`.
 
