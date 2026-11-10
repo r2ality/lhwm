@@ -11,7 +11,11 @@ The goal is a fun, hackable desktop that is still comfortable for casual
 everyday use. It is not trying to be a full desktop environment or a serious
 power-user workflow.
 
-> **Status:** experimental hobby project. This interface update has not been
+## Status
+
+**Working:** Workspaces, tiling mode, floating mode, clock+date, keybinds (+/-).
+**Not working:** Not aware. will daily drive it for a bit and update issues.
+
 > compiled with `hcc` or runtime-tested in this environment because the HolyC
 > compiler is unavailable here. Run `make check`, then compile and test in a
 > nested X server (Xephyr/Xvfb) before replacing a known-good login session.
@@ -439,3 +443,4 @@ approach of [vladbiber/holywm](https://github.com/vladbiber/holywm). The
 upstream repository is the reference project, not a source-code dependency.
 The LHWM files in this repository are newly authored and licensed under the
 MIT License. The HolyC compiler remains under its own upstream license.
+[Qtile](https://github.com/qtile/qtile). Specifically the [clock widget](https://docs.qtile.org/en/v0.17.0/_modules/libqtile/widget/clock.html), so it wouldn't depend on a shell script anymore.
