@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=LHWM
+Comment=Lightweight HolyC window manager
+Exec=@BINDIR@/lhwm-session
+TryExec=@BINDIR@/lhwm
+Type=XSession
+DesktopNames=LHWM
