@@ -13,8 +13,21 @@ power-user workflow.
 
 ## Status
 
-**Working:** Workspaces, tiling mode, floating mode, clock+date, keybinds (+/-).
-**Not working:** Not aware. will daily drive it for a bit and update issues.
+**Working:** 
+
+Workspaces
+
+tiling mode 
+
+floating mode 
+
+clock+date 
+
+keybinds (+/-).
+
+**Not working:** 
+
+Not aware. will daily drive it for a bit and update issues.
 
 > compiled with `hcc` or runtime-tested in this environment because the HolyC
 > compiler is unavailable here. Run `make check`, then compile and test in a
