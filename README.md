@@ -29,6 +29,12 @@ Keybinds (+/-).
 
 Not aware. will daily drive it for a bit and update issues.
 
+## Demos
+
+![Demo 1](https://github.com/r2ality/lhwm/blob/main/demos/demo.png?raw=true)
+![Demo 2](https://github.com/r2ality/lhwm/blob/main/demos/demo_floating.png?raw=true)
+![Demo 3](https://github.com/r2ality/lhwm/blob/main/demos/demo_tiling.png?raw=true)
+
 > compiled with `hcc` or runtime-tested in this environment because the HolyC
 > compiler is unavailable here. Run `make check`, then compile and test in a
 > nested X server (Xephyr/Xvfb) before replacing a known-good login session.
