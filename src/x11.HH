@@ -21,6 +21,7 @@
 #define Mod4Mask 64
 
 #define KeyPress 2
+#define EnterNotify 7
 #define ButtonPress 4
 #define Expose 12
 #define ButtonRelease 5
@@ -32,6 +33,7 @@
 #define ConfigureRequest 23
 
 #define ButtonPressMask 4
+#define EnterWindowMask 16
 #define ButtonReleaseMask 8
 #define PointerMotionMask 64
 #define StructureNotifyMask 131072
@@ -49,6 +51,9 @@
 #define BadAccess 10
 #define SIGCHLD 17
 #define SIG_IGN 1
+#define SIG_DFL 0
+#define NotifyNormal 0
+#define NotifyInferior 2
 #define XA_ATOM 4
 #define XA_WINDOW 33
 #define POLLIN 1
@@ -122,6 +127,29 @@ class XMotionEvent
   U8 pad2a;
   U16 pad2b;
   I32 same_screen;
+};
+class XCrossingEvent
+{
+  I32 type;
+  U32 pad0;
+  U64 serial;
+  I32 send_event;
+  I32 pad1;
+  U8 *display;
+  U64 window;
+  U64 root;
+  U64 subwindow;
+  U64 time;
+  I32 x;
+  I32 y;
+  I32 x_root;
+  I32 y_root;
+  I32 mode;
+  I32 detail;
+  I32 same_screen;
+  I32 focus;
+  U32 state;
+  U32 pad2;
 };
 class XMapRequestEvent
 {
@@ -213,11 +241,6 @@ class XClientMessageEvent
   I32 pad2;
   I64 l[5];
 };
-class XPoint
-{
-  I16 x;
-  I16 y;
-};
 class XExposeEvent
 {
   I32 type;
@@ -276,6 +299,7 @@ union XEvent
   XKeyEvent xkey;
   XButtonEvent xbutton;
   XMotionEvent xmotion;
+  XCrossingEvent xcrossing;
   XMapRequestEvent xmaprequest;
   XUnmapEvent xunmap;
   XDestroyWindowEvent xdestroywindow;
@@ -385,7 +409,6 @@ extern "c" U8 **XListFonts(U8 *dpy, U8 *pattern, I32 maxnames, I32 *actual_count
 extern "c" I32 XFreeFontNames(U8 **names);
 extern "c" I32 XSetForeground(U8 *dpy, U64 gc, U64 pixel);
 extern "c" I32 XFillRectangle(U8 *dpy, U64 drawable, U64 gc, I32 x, I32 y, U32 width, U32 height);
-extern "c" I32 XFillPolygon(U8 *dpy, U64 drawable, U64 gc, XPoint *points, I32 count, I32 shape, I32 mode);
 extern "c" I32 XDrawString(U8 *dpy, U64 drawable, U64 gc, I32 x, I32 y, U8 *string, I32 length);
 extern "c" I32 XDrawRectangle(U8 *dpy, U64 drawable, U64 gc, I32 x, I32 y, U32 width, U32 height);
 extern "c" I32 XSetLineAttributes(U8 *dpy, U64 gc, U32 line_width, I32 line_style, I32 cap_style, I32 join_style);
