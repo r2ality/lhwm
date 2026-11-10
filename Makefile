@@ -1,39 +1,38 @@
-PREFIX     ?= /usr/local
-BINDIR     ?= $(PREFIX)/bin
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
 SYSCONFDIR ?= /etc
-
-# holyc-lang compiler (https://github.com/Jamesbarford/holyc-lang).
-# HCC_PREFIX is where hcc was installed (its include/ holds tos.HH and its
-# lib/ holds libtos); it defaults to the standard /usr/local install.
-HCC        ?= hcc
+XSESSIONS ?= /usr/share/xsessions
+HCC ?= hcc
 HCC_PREFIX ?= /usr/local
-CLIBS       = -lX11 -lXinerama -lXrandr -lXcomposite -lXrender
+BUILD_DIR ?= build
+BIN := $(BUILD_DIR)/lhwm
 
-BIN = holywm
-SRC = holywm.HC
+.PHONY: all build check install uninstall clean install-session
 
-all: $(BIN)
+all: build
 
-$(BIN): $(SRC) xlib.HH
-	$(HCC) --install-dir $(HCC_PREFIX) $(SRC) -clibs='$(CLIBS)' -o $(BIN)
+build: $(BIN)
+
+$(BIN): src/lhwm.HC src/x11.HH
+	HCC='$(HCC)' HCC_PREFIX='$(HCC_PREFIX)' ./scripts/build.sh '$(BIN)'
+
+check:
+	./scripts/smoke-check.sh
 
 install: $(BIN)
-	mkdir -p $(DESTDIR)$(BINDIR)
-	mkdir -p $(DESTDIR)$(SYSCONFDIR)/holywm
-	install -m 755 $(BIN) $(DESTDIR)$(BINDIR)/$(BIN)
-	install -m 644 config.conf $(DESTDIR)$(SYSCONFDIR)/holywm/config.conf
+	install -d '$(DESTDIR)$(BINDIR)' '$(DESTDIR)$(SYSCONFDIR)/lhwm' '$(DESTDIR)$(XSESSIONS)'
+	install -m 755 '$(BIN)' '$(DESTDIR)$(BINDIR)/lhwm'
+	install -m 644 config/lhwm.conf '$(DESTDIR)$(SYSCONFDIR)/lhwm/lhwm.conf'
+	sed -e 's|@BINDIR@|$(BINDIR)|g' -e 's|@DEFAULT_CONFIG@||g' scripts/lhwm-session.in > '$(DESTDIR)$(BINDIR)/lhwm-session'
+	chmod 755 '$(DESTDIR)$(BINDIR)/lhwm-session'
+	sed 's|@BINDIR@|$(BINDIR)|g' sessions/lhwm.desktop.in > '$(DESTDIR)$(XSESSIONS)/lhwm.desktop'
+
+install-session: install
 
 uninstall:
-	rm -f $(DESTDIR)$(BINDIR)/$(BIN)
-	rm -f $(DESTDIR)$(SYSCONFDIR)/holywm/config.conf
-
-# register holywm in the greeter's session list (SDDM/LightDM/GDM/greetd):
-# installs the holywm-session wrapper and the xsessions desktop entry;
-# re-runs itself through sudo/doas if needed
-install-session: $(BIN)
-	PREFIX=$(PREFIX) scripts/install-session.sh
+	rm -f '$(DESTDIR)$(BINDIR)/lhwm' '$(DESTDIR)$(BINDIR)/lhwm-session'
+	rm -f '$(DESTDIR)$(XSESSIONS)/lhwm.desktop'
+	rm -f '$(DESTDIR)$(SYSCONFDIR)/lhwm/lhwm.conf'
 
 clean:
-	rm -f $(BIN)
-
-.PHONY: all install uninstall install-session clean
+	rm -rf '$(BUILD_DIR)'
