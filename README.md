@@ -1,709 +1,441 @@
-# holywm
+# LHWM — Lightweight HolyWM
 
-A BSP tiling window manager for X11 written in **HolyC**, compiled natively for
-Linux with the [holyc-lang](https://github.com/Jamesbarford/holyc-lang) `hcc`
-compiler and linked directly against Xlib. Fork of
-[nvwm](https://github.com/Vifuddyxg/nvwm), rebuilt line by line in HolyC —
-same features, same config format, different sacred language.
+LHWM is a deliberately small X11 window manager written in **HolyC** using
+[holyc-lang](https://github.com/Jamesbarford/holyc-lang). It takes the original
+[HolyWM](https://github.com/vladbiber/holywm) project as its inspiration, but
+uses a compact, independently written core rather than carrying over its
+workspace tree, full-featured bar, tray, overview, monitor hotplug, or
+compositor code.
 
-holywm uses a modal workflow:
+The goal is a fun, hackable desktop that is still comfortable for casual
+everyday use. It is not trying to be a full desktop environment or a serious
+power-user workflow.
 
-- `INSERT` for normal desktop input
-- `NORMAL` for window-manager actions
-- `COMMAND` for vim-style commands such as `:q!`
+> **Status:** experimental hobby project. This interface update has not been
+> compiled with `hcc` or runtime-tested in this environment because the HolyC
+> compiler is unavailable here. Run `make check`, then compile and test in a
+> nested X server (Xephyr/Xvfb) before replacing a known-good login session.
 
-Windows are managed in a tiling tree. New windows are attached near the focused
-one. Floating windows stay above tiled ones and can be moved or resized with
-`Super+mouse`. Multi-monitor setups are handled through Xinerama, with RandR
-hotplug, an XEmbed system tray in the bar, and an XComposite/XRender live
-workspace overview on `Super+z`.
+## Design
 
-## How it is built
+- **Language:** HolyC, compiled ahead-of-time by `hcc`.
+- **Display protocol:** X11. This is not a Wayland compositor.
+- **Core modes:** tiling and floating.
+- **Tiling arrangements:** master/stack, equal-width columns, and monocle.
+- **A tiny built-in top strip:** a native HolyC clock at the top left, nine
+  outlined workspace hitboxes beside it, and a configurable HolyC
+  monogram/wordmark at the top right. It deliberately has no app list, tray,
+  notifications, or extra widget framework.
+- **Nine workspaces:** `Super+1` through `Super+9` switch workspaces;
+  `Super+Shift+1` through `Super+Shift+9` move the focused window. The nine
+  outlined squares in the top strip are clickable workspace hitboxes.
+- No wallpaper handling, compositor, or system tray. Run those separately.
+- **Runtime config:** edit `~/.config/lhwm/lhwm.conf` and press `Mod4+r`.
+  The WM re-reads the file and re-grabs its keybindings; it does not recompile
+  or restart.
+- **External tools:** Alacritty is the default terminal and `dmenu_run` is
+  the default launcher. Both are ordinary `spawn` keybindings configured in
+  `config/lhwm.conf`; change the command there to use Rofi or another launcher.
+  Picom, xwallpaper, and feh remain independent optional tools. The clock
+  is part of LHWM itself and does not need a companion process.
 
-There is no C compiler involved in holywm itself. `holywm.HC` is HolyC; the
-`xlib.HH` header declares the slice of Xlib/Xinerama/Xrandr/Xcomposite/Xrender
-and libc that the WM needs as `extern "c"` functions plus byte-exact class
-layouts for the X structs (generated and verified against the real C headers
-by `scripts/gen-abi.c`). `hcc` compiles that to x86_64 assembly and links it
-against the system X11 libraries.
+The implementation is intentionally single-screen for now. It uses the X11
+screen dimensions and does not implement multi-monitor management, fullscreen
+policy, per-app rules, or a system tray.
 
-Quirks of the holyc-lang toolchain that this codebase works around (kept as
-comments where they bite):
+## Default keys
 
-- `&local` miscompiles for typed-pointer locals (`U64 *`, `U8 **`): out-params
-  that return pointers go through a `U8 *` temp plus a postfix cast.
-- `StrPrint`'s `%s` path ReAllocs the destination as if heap-allocated, so any
-  formatting into a fixed buffer uses `copystr`/`stradd` instead.
-- Global symbol names longer than 25 characters get truncated in emitted
-  assembly operands by stock hcc (fixed upstream by bumping a buffer, but the
-  code keeps names short so a stock compiler works).
+| Key | Action |
+|---|---|
+| `Super+Enter` | Launch `alacritty` |
+| `Super+q` | Close the focused client (send `WM_DELETE_WINDOW` when supported; otherwise kill its X client) |
+| `Super+d` | Launch `dmenu_run` (change the spawn command in the config to use Rofi) |
+| `Super+Shift+q` | Exit LHWM / log out of the WM session |
+| `Super+r` | Reload the config without recompiling or restarting |
+| `Super+m` | Toggle tiling / floating mode |
+| `Super+j` | Focus the next window |
+| `Super+k` | Focus the previous window |
+| `Super+Tab` | Cycle the tiling arrangement |
+| `Super+1` … `Super+9` | Switch to workspace 1–9 |
+| `Super+Shift+1` … `Super+Shift+9` | Move focused window to workspace 1–9 |
+| Click workspace square | Switch to that workspace |
+| `Super+Left mouse` | Move the focused window (floating mode only) |
+| `Super+Right mouse` | Resize the focused window (floating mode only) |
 
-## Dependencies
+`Super` is X11 `Mod4` (usually the Windows key). The defaults are repeated in
+`config/lhwm.conf`. If you already copied an older config into
+`~/.config/lhwm/lhwm.conf`, update its old `bind = Mod4+d launcher` line to
+`bind = Mod4+d spawn dmenu_run`; user config overrides the packaged defaults.
 
-Build:
+## Build
 
-- [holyc-lang](https://github.com/Jamesbarford/holyc-lang) (`hcc`), built and
-  installed with its `tos` runtime library
-- a C toolchain for hcc itself and for assembling/linking (`gcc` or `clang`,
-  `make`, `cmake`)
-- X11 client libraries: `libX11`, `libXinerama`, `libXrandr`, `libXcomposite`,
-  `libXrender`
+### Nix (recommended)
 
-Runtime tools used by the default config:
+The flake provides LHWM as the default package:
 
-- `alacritty` for `terminal = alacritty` and `Super+q`
-- `rofi` for the default `Super+Space` launcher
-- one screenshot tool: `maim`, `scrot`, or ImageMagick's `import`
-- optional media tools if you uncomment those keybinds: `pactl`, `playerctl`, and `brightnessctl`
-
-You can avoid these runtime tools by changing the matching commands in `~/.config/holywm/config.conf`.
-
-Session tools:
-
-- one X11 server: Xorg or XLibre
-- either `startx`/`xinit` or a display manager/greeter that can start X sessions
-- `dbus-run-session` if you use the recommended full-session examples below
-
-## Full Install Example
-
-First the compiler:
-
-```bash
-git clone https://github.com/Jamesbarford/holyc-lang
-cd holyc-lang
-make
-sudo make install        # installs hcc, tos.HH and libtos under /usr/local
+```sh
+nix build .
+./result/bin/lhwm
 ```
 
-Then holywm:
+To enter a development shell with `hcc`, GCC, Make, and Xlib available:
 
-```bash
-git clone https://github.com/Vifuddyxg/holywm
-cd holywm
-make                     # hcc holywm.HC -clibs='-lX11 ...' -o holywm
+```sh
+nix develop
+./build.sh
+```
+
+The flake fetches `holyc-lang` as a source input and builds both the `hcc`
+compiler and its required `libtos` HolyC runtime. The runtime is built from
+`src/holyc-lib/all.HC` with `hcc -lib tos` and installed beside the compiler,
+including `tos.HH`; this is required because AOT links use `-ltos`. The flake
+then compiles the HolyC source in `src/lhwm.HC`. `#link <X11>` in the Xlib
+binding header tells `hcc` to link against Xlib. The Nix expression uses the
+current `pkgs.libx11` attribute rather than the deprecated `pkgs.xorg.libX11`
+name. The package keeps its default config at `share/lhwm/lhwm.conf`; the session
+wrapper points LHWM at that file, then your home config can override it.
+
+The core avoids conditional (`?:`) expressions directly inside Xlib argument
+lists because some `hcc` builds mis-parse that form. Callback arguments are
+explicitly cast to the pointer type used by the small Xlib/POSIX binding header.
+
+### Existing `hcc` installation
+
+Requirements:
+
+- `holyc-lang` / `hcc` installed and available in `PATH`.
+- Xlib development headers/libraries (`libX11` development package).
+- A C linker toolchain (`gcc` or `clang`) used by the HolyC AOT compiler.
+
+Compile from the project root:
+
+```sh
+./build.sh
+```
+
+If `hcc` was installed into a non-default prefix, tell it where the compiler's
+HolyC runtime and include files are:
+
+```sh
+HCC_PREFIX="$HOME/.local" ./build.sh
+```
+
+The output is `build/lhwm`.
+
+### Install on a generic Linux distribution
+
+After compiling:
+
+```sh
 sudo make install
-mkdir -p ~/.config/holywm
-cp config.conf ~/.config/holywm/config.conf
 ```
 
-To log into holywm from a display manager, register it in the greeter's
-session list (installs the `holywm-session` wrapper and the xsessions
-desktop entry):
+This installs:
 
-```bash
-make install-session
-```
+- `lhwm` and `lhwm-session` into `/usr/local/bin`;
+- the default config into `/etc/lhwm/lhwm.conf`;
+- an X session desktop entry into `/usr/share/xsessions/lhwm.desktop`.
 
-If hcc lives somewhere else, point the Makefile at it:
+Install `dmenu` on generic Linux systems for the default `dmenu_run` binding.
+The native clock uses libc time functions, and the in-process topbar uses
+the X11 core font alias `fixed`; install the Xorg misc bitmap fonts (often packaged as
+`xorg-fonts-misc` or `xfonts-base`) if that alias is unavailable.
 
-```bash
-make HCC=~/.local/bin/hcc HCC_PREFIX=~/.local
-```
-
-holyc-lang targets Linux (and macOS) on x86_64/arm64; the BSDs are not
-supported by the compiler, so unlike nvwm this fork is effectively
-Linux-only.
-
-### Portability Notes
-
-holywm is an X11 window manager. It is intended to run inside an X session, not as a Wayland compositor.
-
-holywm works with Xorg and XLibre, because XLibre is an X11 server forked from X.Org Server with a compatibility goal.
-holywm uses normal Xlib/EWMH behavior and Xinerama for monitor geometry. If Xinerama is not active, holywm falls back to one monitor using the root window size.
-
-The `battery` bar item currently reads Linux-style battery information from `/sys/class/power_supply`.
-On NixOS it works the same as other Linux distributions; on FreeBSD and OpenBSD it may stay empty unless that code is adapted for the platform.
-
-The optional `screen_off_minutes` setting uses `xset`.
-Install `xset` if you want that feature on a minimal system, or leave `screen_off_minutes = 0`.
-
-### Xserver Sessions: Xorg and XLibre
-
-holywm runs inside a normal X11 session. Install one X11 server, not both: the traditional Xorg server or XLibre, an alternative X11 server implementation forked from X.Org Server.
-
-holywm does not need a separate build for XLibre. Build holywm against the normal X11 client libraries (`libX11` and `libXinerama`) and run it inside the XLibre session.
-
-If your distribution packages XLibre, prefer those packages. If not, use your distribution's normal Xorg packages. The XLibre project tracks package availability on its wiki:
-
-- https://github.com/X11Libre/xserver/wiki/Are-We-XLibre-Yet%3F
-
-Minimal `~/.xinitrc`:
+You can override install paths:
 
 ```sh
-exec holywm
+sudo make install PREFIX=/usr BINDIR=/usr/bin SYSCONFDIR=/etc XSESSIONS=/usr/share/xsessions
 ```
 
-Recommended `~/.xinitrc` for a full session:
+For a user-local install (the display manager may not scan this session path):
 
 ```sh
-exec dbus-run-session sh -lc '
-export XDG_CURRENT_DESKTOP=holywm
-export XDG_SESSION_DESKTOP=holywm
-export DESKTOP_SESSION=holywm
-export XCURSOR_THEME=Adwaita
-export XCURSOR_SIZE=24
-command -v pipewire >/dev/null 2>&1 && pipewire &
-command -v wireplumber >/dev/null 2>&1 && wireplumber &
-exec holywm
-'
+make install PREFIX="$HOME/.local" BINDIR="$HOME/.local/bin" \
+  SYSCONFDIR="$HOME/.config" XSESSIONS="$HOME/.local/share/xsessions"
 ```
 
-The minimal form may work on some systems, but the `dbus-run-session` variant is the safer default if you want audio/session services to behave normally.
-
-If you build XLibre from source into a separate prefix, test that server first, then start holywm on it:
+Copy the example config to your home directory if you want to keep personal
+settings separate from the system-wide default:
 
 ```sh
-XSERVER="$HOME/opt/xlibre/bin/X"
-startx "$HOME/.local/bin/holywm" -- "$XSERVER" :1
+mkdir -p ~/.config/lhwm
+cp config/lhwm.conf ~/.config/lhwm/lhwm.conf
 ```
 
-If your `startx` does not accept a server path directly, use `xinit`:
+### NixOS integration (LightDM and other display managers)
+
+The simplest NixOS installation is to generate a small standalone NixOS
+module that points to the LHWM package in the Nix store. This avoids needing
+to add LHWM as a flake input or configure an overlay in your system flake.
+
+From the LHWM source directory, run:
 
 ```sh
-xinit "$HOME/.local/bin/holywm" -- "$HOME/opt/xlibre/bin/X" :1
+./generate-xsession.sh
 ```
 
-For the normal installed system server, keep the regular `~/.xinitrc`:
+The script builds `.#lhwm` with Nix (or reuses `LHWM_PACKAGE` if you provide an
+existing LHWM store path) and writes `lhwm.nix` in the project directory. Copy
+the generated module into `/etc/nixos`:
 
 ```sh
-exec holywm
+sudo cp ./lhwm.nix /etc/nixos/lhwm.nix
 ```
 
-Then run:
+Then add it to the `imports` list in `/etc/nixos/configuration.nix`:
+
+```nix
+{ config, pkgs, ... }:
+{
+  imports = [
+    ./hardware-configuration.nix
+    ./lhwm.nix
+  ];
+
+  # Keep your existing LightDM configuration. For a new setup, enable it
+  # with the option name used by your nixpkgs release.
+  services.xserver.enable = true;
+  services.displayManager.lightdm.enable = true;
+}
+```
+
+If LightDM is already enabled in your configuration, do not add a second
+LightDM definition; just add `./lhwm.nix` to `imports`. Rebuild:
 
 ```sh
-startx
+sudo nixos-rebuild switch
 ```
 
-#### Greeter / XSession
+At the LightDM login screen, open the session chooser (often the gear/menu
+beside the user name) and select **LHWM**. The generated module installs `pkgs.dmenu` for the default `dmenu_run`
+binding. It adds `pkgs.font-misc-misc` through `fonts.packages` so Xorg can
+load the bitmap `fixed` core font used by the built-in strip. The generated
+module registers the
+`lhwm.desktop` X session through `services.displayManager.sessionPackages`,
+installs the session launcher into the system profile, and points it at the
+LHWM binary and its packaged default configuration. The generated module keeps
+the discovered package path as a string rather than a Nix path literal: a
+standalone `/nix/store/...` path literal is rejected by pure flake evaluation
+because it is not one of the evaluating flake's declared inputs. Nix detects
+the store references embedded in the generated runner and session desktop file
+and retains LHWM in the resulting system closure.
+This session-package mechanism is supported by NixOS's display-manager
+integration; LightDM scans the generated X-session directory. See the
+[NixOS display-manager session package implementation](https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/display-managers/default.nix)
+and the [LightDM session-directory configuration](https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/x11/display-managers/lightdm.nix).
 
-The quickest way is the bundled installer, which does the whole setup below in
-one step (session wrapper + xsessions entry, and installs the binary first if
-needed):
+The older flake overlay/module integration is still available for users who
+prefer to manage LHWM as a flake input, but the generated `lhwm.nix` workflow
+above is the recommended route for a straightforward NixOS installation.
+
+For `startx`, no clock helper is required; simply start LHWM from `~/.xinitrc`:
 
 ```sh
-scripts/install-session.sh
-```
-
-It asks for `sudo`/`doas` on its own and holywm shows up in your greeter's
-session list at the next login screen. `PREFIX=` and `XSESSIONS=` override the
-default `/usr/local` and `/usr/share/xsessions` locations.
-
-If you prefer to set it up by hand, one simple setup looks like this.
-Use a session wrapper script. Do not point the greeter directly at `holywm`, or you may end up with a broken login session.
-
-`/usr/share/xsessions/holywm.desktop`
-
-```ini
-[Desktop Entry]
-Name=holywm
-Comment=Neovim Window Manager
-Exec=/usr/local/bin/holywm-session
-Type=XSession
-DesktopNames=holywm
-```
-
-`/usr/local/bin/holywm-session`
-
-```sh
-#!/bin/sh
-export XDG_CURRENT_DESKTOP=holywm
-export XDG_SESSION_DESKTOP=holywm
-export XDG_SESSION_TYPE=x11
-
-exec dbus-run-session sh -lc '
-  command -v pipewire >/dev/null 2>&1 && pipewire &
-  command -v wireplumber >/dev/null 2>&1 && wireplumber &
-  exec holywm
-'
-```
-
-Make the session launcher executable:
-
-```sh
-sudo chmod +x /usr/local/bin/holywm-session
-```
-
-If you use `greetd` with `tuigreet`, that is enough.
-`tuigreet` will pick up `holywm` automatically from `/usr/share/xsessions/holywm.desktop`.
-
-Notes:
-
-- holywm requires X11 client libraries at build time, not XLibre server headers.
-- Multi-monitor support depends on the Xinerama extension being available and active in the running X server.
-- Existing Xorg session wrappers and `.desktop` files usually work unchanged if the display manager starts XLibre as the system X server.
-
-If you also want transparency, blur, shadows, or animations, install a compositor such as `picom`.
-
-`picom` support is optional and experimental.
-It is not required for holywm and is not part of the default setup.
-Depending on your hardware, driver, GPU, and `picom` build, blur or animations may behave differently.
-
-If you want the lightest holywm setup, do not install `picom` at all.
-holywm works fine without a compositor.
-
-### Choosing a `picom` build
-
-If you want transparency, blur, shadows, or animations, install a `picom` build that matches the effect level you want:
-
-- No compositor: lightest setup, no transparency, no blur, no animations.
-- Plain `picom`: transparency, blur, rounded corners, shadows, fades, but no extra animation fork requirements.
-- `FT-Labs-picom`: more advanced animation-focused setup for users who want stronger animation effects.
-- Custom fork: you can use your own preferred `picom` fork as long as you point `autostart` at the correct binary.
-
-Project links:
-
-- Plain `picom`: https://github.com/yshui/picom
-- `FT-Labs-picom`: https://github.com/HcGys/FT-Labs-picom
-
-Important:
-
-- Different `picom` builds do not support the same flags or the same `animation-*` config keys.
-- Do not assume `/usr/local/bin/picom` exists on every system.
-- If your distro package provides standard `picom`, the safest default is:
-
-```conf
-autostart = picom --config ~/.config/holywm/picom.conf
-```
-
-
-### Option 1: No `picom`
-
-Use this if you want the lightest holywm setup:
-
-- Do not copy `picom.conf`
-- Do not add any `autostart = picom ...` line
-
-### Option 2: Plain `picom`
-
-Use this if you want transparency, blur, shadows, and rounded corners, without custom animation forks.
-
-Install:
-
-- Arch Linux / Artix Linux: `sudo pacman -S picom`
-- Void Linux: `sudo xbps-install -S picom`
-- Gentoo: `emerge x11-misc/picom`
-- Debian / Ubuntu: `sudo apt install picom`
-- Fedora: `sudo dnf install picom`
-- openSUSE: `sudo zypper install picom`
-- Alpine: `sudo apk add picom`
-- NixOS / nix-shell: `nix-shell -p picom`
-- FreeBSD: `doas pkg install picom`
-- OpenBSD: `doas pkg_add picom`
-
-Autostart:
-
-```conf
-autostart = picom --config ~/.config/holywm/picom.conf
-```
-
-If you use plain `picom`, keep the config focused on blur, transparency, shadows, rounded corners, and fades.
-If the compositor fails to start, remove unsupported `animation-*` keys.
-
-### Build dependencies for `picom` forks
-
-If you want to try a custom `picom` fork, this is the point where you switch from "install a package from the distro" to "build a compositor yourself".
-That is useful if you want more advanced animation behavior or a fork with features that the standard distro package does not provide.
-
-Custom forks usually need the normal build toolchain, plus X11, XCB, config, event-loop, and rendering development libraries.
-If you only want plain `picom` from your distro for blur, transparency, shadows, and fades, skip this section entirely.
-
-If you want to build a custom `picom` fork such as `FT-Labs-picom`, install the build dependencies first:
-
-- Arch Linux / Artix Linux:
-
-```bash
-sudo pacman -S --needed base-devel git meson ninja pkgconf libx11 libxext libxcb xcb-util xcb-util-image xcb-util-renderutil libconfig libev pcre2 pixman dbus uthash
-```
-
-- Debian / Ubuntu:
-
-```bash
-sudo apt install git meson ninja-build pkg-config uthash-dev libconfig-dev libdbus-1-dev libev-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev
-```
-
-- Gentoo:
-
-```bash
-emerge dev-libs/uthash dev-util/meson dev-util/ninja dev-util/pkgconf x11-libs/libX11 x11-libs/libXext x11-libs/libxcb x11-libs/xcb-util x11-libs/xcb-util-image x11-libs/xcb-util-renderutil dev-libs/libconfig dev-libs/libev dev-libs/libpcre2 x11-libs/pixman sys-apps/dbus
-```
-
-- Fedora:
-
-```bash
-sudo dnf install gcc git meson ninja-build pkgconf-pkg-config uthash-devel libconfig-devel dbus-devel libev-devel pcre2-devel pixman-devel libX11-devel libX11-xcb libXext-devel libxcb-devel xcb-util-image-devel xcb-util-renderutil-devel
-```
-
-### Option 3: `FT-Labs-picom`
-
-Use this if you want more advanced animation behavior and a more animation-heavy compositor setup.
-
-GitHub:
-
-- https://github.com/HcGys/FT-Labs-picom
-
-One simple local install example:
-
-```bash
-mkdir -p ~/src ~/opt
-git clone https://github.com/HcGys/FT-Labs-picom ~/src/FT-Labs-picom
-cd ~/src/FT-Labs-picom
-meson setup --buildtype=release build --prefix="$HOME/opt/picom-ftlabs"
-ninja -C build
-ninja -C build install
-```
-
-This fork installs launcher symlinks such as `~/opt/picom-ftlabs/bin/compton` and `~/opt/picom-ftlabs/bin/compton-trans`.
-Use the `compton` launcher from that prefix in your holywm autostart line.
-
-### Option 4: Your own fork
-
-If you want to test a custom build separately before making it your default compositor, install it to a separate prefix and point `autostart` at that exact binary:
-
-```conf
-autostart = ~/opt/picom-custom/bin/compton --config ~/.config/holywm/picom.conf
-```
-
-This makes it easy to compare multiple `picom` builds without replacing the system package or overwriting another fork you already use.
-
-### After installing your chosen `picom`
-
-Once you have installed the `picom` build you want, copy the sample config:
-
-```bash
-cd ~/holywm
-mkdir -p ~/.config/holywm
-cp picom.conf ~/.config/holywm/picom.conf
-```
-
-Then enable it in `~/.config/holywm/config.conf`.
-
-Plain `picom`:
-
-```conf
-autostart = picom --config ~/.config/holywm/picom.conf
-```
-
-`FT-Labs-picom`:
-
-```conf
-autostart = ~/opt/picom-ftlabs/bin/compton --config ~/.config/holywm/picom.conf
-```
-
-Your own fork:
-
-```conf
-autostart = ~/opt/picom-custom/bin/compton --config ~/.config/holywm/picom.conf
+exec lhwm
 ```
 
 ## Configuration
 
-holywm loads config files in this order:
+The example configuration is `config/lhwm.conf`; the lookup order is:
 
-- `/etc/holywm/config.conf`
-- `./config.conf`
-- `~/.config/holywm/config.conf`
+1. `/etc/lhwm/lhwm.conf`;
+2. the file named by `LHWM_DEFAULT_CONFIG` (the Nix session wrapper points to
+   the package's `share/lhwm/lhwm.conf`; normally unset on generic installs);
+3. `$XDG_CONFIG_HOME/lhwm/lhwm.conf`, or `~/.config/lhwm/lhwm.conf`;
+4. `./lhwm.conf` only when `HOME` and `XDG_CONFIG_HOME` are unavailable.
 
-Later files override earlier ones.
+Set `LHWM_CONFIG=/path/to/file` to use an explicit user config instead of the
+normal home path (system and packaged defaults are still read first).
 
-No recompile needed for config changes.
+### Geometry and appearance
 
-Example:
+```ini
+layout = master-stack
+gap = 8
+border_width = 2
+master_ratio = 60
+border_focus = #89b4fa
+border_normal = #45475a
 
-```conf
-gap            = 8
-border         = 2
-bar_height     = 24
-bar_position   = bottom
-bar_enabled    = true
-external_bar_height = 0
-border_focus   = 7aa2f7
-border_normal  = 2f3549
-terminal       = kitty
-
-bind_insert = mod+q = spawn:kitty
-bind_insert = mod+shift+q = wm:quit
-bind_insert = mod+Space = spawn:rofi -show drun
-bind_insert = mod+1 = wm:workspace:1
-bind_normal = i = wm:mode:insert
-command = :q! = wm:quit
-```
-
-Use `config.conf` for behavior, keybinds, rules, bar settings, colors, spacing, and autostart.
-
-Optional monitor power-off is controlled by `screen_off_minutes`.
-The default value, `0`, leaves it disabled. Set it above `0` to turn the monitor off after that many idle minutes:
-
-```conf
-screen_off_minutes = 10
-```
-
-`warp_pointer` defaults to `false`. This is the game-safe setting: holywm does
-not synthesize mouse movement while changing focus or workspaces. Set it to
-`true` only if you prefer the cursor to jump to the newly focused window.
-
-holywm applies this through `xset` at startup and when config is reloaded with `:w!`.
-
-Supported modifiers:
-
-- `mod` = Super
-- `shift`
-- `ctrl`
-- `alt`
-
-Window border colors are configured separately from bar colors:
-
-- `border_focus`: selected/focused window border
-- `border_normal`: unselected window border
-
-Both values are hex RGB and can be written with or without `#`.
-
-## Bar
-
-The bar is split into three sections:
-
-- `bar_left`
-- `bar_center`
-- `bar_right`
-
-Available elements:
-
-- `command`
-- `title`
-- `workspaces`
-- `battery`
-- `clock`
-- `mode`
-- `tray`
-
-Example:
-
-```conf
-bar_left   = command,title,workspaces
-bar_center =
-bar_right  = tray,battery,clock
+# Minimal Qtile-inspired strip. The clock is native to the HolyC event loop.
 bar_enabled = true
-bar_height = 24
-bar_position = bottom
-bar_padding_x = 10
-bar_item_gap = 6
-bar_text_padding = 8
-bar_workspace_min_width = 20
-bar_bg = 1a1b26
-bar_fg = c0caf5
-bar_accent_bg = 7aa2f7
-bar_accent_fg = 1a1b26
-bar_muted_fg = 565f89
+clock_enabled = true
+clock_format = %a %d %b  %H:%M
+clock_update_interval = 1
+bar_height = 28
+bar_border_width = 1
+bar_border_color = #45475a
+bar_bg = #1e1e2e
+bar_fg = #cdd6f4
+bar_accent = #d8ad4a
+bar_icon_fg = #ffffff
+bar_icon_shadow = #a85d26
+bar_icon_enabled = true
+bar_icon_mark = C+
+bar_icon = HolyC
+
+# The topbar and all text inside it use an X11 core font alias.
+bar_font = fixed
 ```
 
-### System Tray
+Available tiling arrangements:
 
-The `tray` bar element is an XEmbed system tray (the freedesktop System Tray
-specification). Applications that keep running in the background — `nm-applet`,
-Telegram, Discord, `blueman-applet`, volume/battery applets — dock their icon
-into the bar, so you can see what is running and act on it.
+- `master-stack`: one large master on the left, remaining windows stacked on
+  the right;
+- `columns`: equal-width vertical columns;
+- `monocle`: all clients share the screen area, with the selected client raised.
 
-- Icons appear in the order applications dock and take `bar_height - 6` pixels.
-- Clicks go straight to the application's own icon window, so left-click and
-  right-click open the app's native tray menu — including its Quit entry, which
-  is how you close a background app from the tray.
-- In the default config the tray sits in `bar_right` just left of the battery:
-  `bar_right = tray,battery,clock`.
-- The tray lives on the bar of the primary (first) monitor.
-- Remove `tray` from the bar sections to disable the tray entirely; holywm then
-  does not claim the `_NET_SYSTEM_TRAY` selection and a standalone tray such as
-  `stalonetray` can own it instead.
+`Super+Tab` cycles through the arrangements. These are tiling layouts, not
+additional interaction modes; the only global modes remain tiling and floating.
 
-Bar colors are hex RGB values. You can write them with or without `#`, for example `7aa2f7` or `#7aa2f7`.
+### Keybinding syntax
 
-- `bar_bg`: full bar background
-- `bar_fg`: normal bar text
-- `bar_accent_bg`: active workspace / mode background
-- `bar_accent_fg`: active workspace / mode text
-- `bar_muted_fg`: inactive workspace / muted text
-
-Reload holywm with `:w!` after changing colors.
-
-### External Bars
-
-holywm detects external bars automatically. Any X11 bar that sets `_NET_WM_WINDOW_TYPE_DOCK` (polybar, tint2, and most common bars do this by default) is recognized as a dock window. holywm reads the bar's reserved area from its `_NET_WM_STRUT_PARTIAL` or `_NET_WM_STRUT` hints and adjusts the tiling work area accordingly, so tiled windows never overlap the bar.
-
-This works on both top and bottom simultaneously and is independent of where the internal holywm bar sits. For example, the internal bar can be at the bottom while polybar sits at the top — holywm reserves space for both.
-
-**Using only an external bar (replace the built-in bar)**
-
-Disable the internal bar so only the external one is shown:
-
-```conf
-bar_enabled = false
-autostart = polybar main
+```ini
+bind = Mod4+Return spawn alacritty
+bind = Mod4+d spawn dmenu_run
+bind = Mod4+Shift+q quit
+bind = Mod4+m mode
 ```
 
-No other setting is needed. holywm detects polybar's height automatically when it maps.
+Supported modifiers: `Mod4` / `Super`, `Shift`, `Control` / `Ctrl`, and
+`Alt` / `Mod1`. Keys are X11 keysym names (for example `Return`, `Tab`, `q`,
+`F1`). A `spawn` binding runs its trailing text through `/bin/sh -c`, so shell
+arguments and pipelines are supported. Bindings are grabbed and matched by the
+same X11 keycode, with CapsLock and NumLock ignored, so shifted combinations do
+not depend on whether the server reports `q` or `Q`. Grabs use X11's
+`owner_events = false` behavior, so a focused application cannot swallow a
+window-manager shortcut by selecting its own key events. Keep commands trusted;
+the WM does not attempt to sandbox them.
 
-**Using an external bar alongside the built-in bar**
+Supported actions: `spawn`, `kill`, `quit`, `reload`, `mode`, `focus_next`,
+`focus_prev`, `layout_next`, `workspace N`, and `move_workspace N`. There is no
+special launcher action: the
+launcher is an ordinary `spawn` command, exactly like the terminal binding.
+The default is `dmenu_run`; edit the binding to `bind = Mod4+d spawn rofi -show drun`
+or another command when preferred. Make sure the selected launcher is
+installed and on the session `PATH`.
 
-Leave `bar_enabled = true`. Both bars coexist on different sides:
+#### Minimal top strip
 
-```conf
+LHWM draws one 28-pixel strip at the top of the screen. It reserves that area
+for windows in tiling mode and keeps the strip above floating windows. The
+left side displays weekday/date/time, followed by nine outlined workspace
+hitboxes. The right side displays a small gold hexagonal `C+` mark and the
+configurable `HolyC` wordmark. The workspace squares can be clicked.
+
+Configuration options:
+
+```ini
 bar_enabled = true
-bar_position = bottom
-autostart = polybar main
+bar_height = 28
+bar_border_width = 1
+bar_border_color = #45475a
+bar_bg = #1e1e2e
+bar_fg = #cdd6f4
+bar_accent = #d8ad4a
+bar_icon_fg = #ffffff
+bar_icon_shadow = #a85d26
+bar_icon_enabled = true
+bar_icon_mark = C+
+bar_icon = HolyC
+
+workspace_border_color = #45475a
+workspace_active_border = #d8ad4a
+workspace_active_bg = #3b3528
+workspace_fg = #a6adc8
+workspace_active_fg = #ffffff
 ```
 
-holywm reserves space at the bottom for its own bar and at the top for polybar.
+`bar_border_color` and `bar_border_width` control the outer frame of the
+entire strip. `workspace_border_color` controls the inactive workspace square
+outlines; `workspace_active_border` and `workspace_active_bg` style the active
+workspace. The foreground options control the workspace number colors.
 
-**Bars started outside the holywm autostart**
+Set `bar_enabled = false` to remove the entire strip. Set
+`bar_icon_enabled = false` to hide the badge/wordmark while keeping the
+clock and workspace squares.
+The bar uses a server-side X11 core font rather than Xft; NixOS installations
+through the generated module receive the small misc bitmap-font package
+automatically.
+Change `bar_icon_mark` (up to two characters) to change the text drawn inside
+the hexagon and `bar_icon` to change the wordmark. `bar_icon_fg`,
+`bar_icon_shadow`, and `bar_accent` control the badge colors. `bar_font`
+selects an installed X11 core font; LHWM tries `fixed`, then `6x13` and `7x14`
+if the configured font cannot be loaded. Changes apply with `Mod4+r`; no
+rebuild is required.
 
-If the external bar is launched from `.xinitrc` or a display manager session script before holywm starts, holywm scans all existing windows at startup and picks it up automatically.
-
-**`external_bar_height` override**
-
-You normally do not need this setting. Use it only if the bar does not advertise strut hints or if you want to force a specific reserved height:
-
-```conf
-external_bar_height = 30
-```
-
-Set it to `0` (the default) to let holywm auto-detect from the bar's own hints. Setting it to a positive number overrides auto-detection for the side matching `bar_position`.
-
-**Fullscreen behavior**
-
-Dock windows are kept above tiled windows at all times. When a client enters EWMH real fullscreen (such as a browser video player), dock windows are lowered so the fullscreen content covers the whole screen. They are raised again when fullscreen exits.
-
-**Good X11 bar choices**
-
-- `polybar`: full-featured, practical default for X11.
-- `lemonbar`: very small and script-driven.
-- `tint2`: panel/taskbar style, useful if you want a more traditional desktop panel.
-- `eww`: flexible widget system for custom bars.
-- `xmobar`: good if you like a text/status oriented bar.
-- `dzen2`: old but simple and lightweight.
-
-Install only the bar you plan to use. holywm does not require any external bar.
-
-## Modes
-
-### INSERT
-
-Applications receive keyboard input normally.
-
-### NORMAL
-
-Window-manager keys are handled directly.
-
-Default pattern:
-
-- `Super+Escape` enters `NORMAL`
-- `i` returns to `INSERT`
-- `:` enters `COMMAND`
-
-### COMMAND
-
-Commands are typed in the bar and executed with `Enter`.
+The clock follows the design of Qtile's `Clock` / `InLoopPollText` widget,
+translated into the LHWM event loop. The WM obtains local system time with
+`localtime()`, formats it with libc `strftime()`, compares the new string with
+the previously displayed value, and redraws only when the text changes. The X
+connection is waited on with `poll()` using a one-second timeout by default;
+this lets X events and clock ticks share one event loop without a helper
+process, root-window status property, or busy polling. `clock_format` accepts
+standard `strftime` directives and `clock_update_interval` is in seconds
+(1–60). The system's local timezone is used, just like Qtile's default clock.
 
 Example:
 
-```text
-:q!
+```ini
+clock_enabled = true
+clock_format = %a %d %b  %H:%M
+clock_update_interval = 1
 ```
 
-Command mode supports three forms:
+Set `clock_enabled = false` to hide the text while keeping workspace squares
+and the HolyC mark. Change the format and press `Super+r`; no recompilation is
+needed. The native clock adds no Xft, GTK, Python, or shell runtime dependency.
 
-- `:command` for internal holywm commands
-- `/command` to run a shell command in the background
-- `:t command` to run a shell command inside the configured terminal
+## External desktop tools
 
-Examples:
+LHWM intentionally delegates compositing and wallpaper management to other
+programs.
 
-```text
-:q!
-/librewolf
-:t htop
-```
+- **Compositor:** install and configure Picom yourself. It is not a dependency
+  and is not launched by LHWM.
+- **Wallpaper:** use `xwallpaper` or `feh` from your `.xprofile`, `.xinitrc`, or
+  a personal session script.
+- **Clock:** a native HolyC text widget updated from the WM event loop.
+  Optional external panels/widgets can still be added independently.
+- **Optional session extras:** `examples/session-extra.sh` demonstrates
+  starting Picom and a wallpaper setter before LHWM. It is not installed or
+  enabled automatically.
 
-You can also define your own command aliases in `config.conf`:
+The aim is to keep the WM binary small while keeping its tiny clock integrated
+with the core event loop. Other desktop components remain external.
 
-```conf
-command = :lock = spawn:slock
-command = :music = spawn:kitty -e ncmpcpp
-command = :browser = spawn:librewolf
-```
+## What is intentionally omitted
 
-## Keybinds
+Compared with the upstream HolyWM feature set, LHWM removes the tray and
+complex multi-workspace tree (using nine simple flat workspaces instead),
+BSP splits, overview thumbnails, Xinerama/RandR
+monitor handling, autostart command list, internal compositor support,
+screenshot helpers, battery widgets, command mode, and the modal
+INSERT/NORMAL/COMMAND workflow. It also avoids runtime dependencies on
+Picom, Rofi, Alacritty, feh, or xwallpaper; only the configured commands need
+to exist when invoked.
 
-The exact behavior depends on your config, but the default setup includes:
+## Development notes / current limitations
 
-| Key | Action |
-| --- | --- |
-| `Super+q` | Open terminal in `INSERT` mode |
-| `Super+Shift+q` | Quit holywm |
-| `Super+Escape` | Enter `NORMAL` mode |
-| `i` | Return to `INSERT` mode |
-| `q` | Open terminal in `NORMAL` mode |
-| `:` | Enter `COMMAND` mode |
-| `/` | Enter shell command mode |
-| `Super+1..9` | Switch workspace |
-| `Super+Ctrl+1..9` | Move focused window to workspace |
-| `Super+Left/Right/Up/Down` | Focus windows |
-| `Super+Ctrl+Left/Right/Up/Down` | Swap windows |
-| `Super+j / Super+k` | Focus down / up |
-| `Super+c` | Close the focused window |
-| `Print` | Screenshot the full screen |
-| `Super+f` | WM fullscreen |
-| `Super+v` | Toggle floating |
-| `Super+Button1` | Move floating window |
-| `Super+Button3` | Resize floating window |
-| `:q!` | Quit holywm |
-| `:w!` | Reload config |
+- This first cut is X11-only and designed around a single X screen.
+- No built-in fullscreen, per-app rules, or EWMH strut reporting
+  for external panels. The internal strip reserves its own top 28 pixels.
+- A fixed client table of 128 windows keeps the core and memory management
+  straightforward.
+- The Xlib bindings are kept local in `src/x11.HH` so they can be audited and
+  trimmed without dragging in a large general-purpose header.
+- `Super+q` requests a graceful close when the client advertises
+  `WM_DELETE_WINDOW`; clients without that protocol are terminated with
+  `XKillClient`.
+- `Super+d` is a normal `spawn dmenu_run` binding. Install `dmenu` or edit
+  that binding to point to another launcher such as `rofi -show drun`.
+- The HolyC compiler itself documents that it is experimental. LHWM should be
+  considered a hobby project and tested in a nested X server before normal use.
 
-## Floating
+## Credits and licensing
 
-Floating windows stay above tiled ones and do not reserve tiled space.
-
-- toggle floating from `NORMAL` mode
-- drag with `Super+Button1`
-- resize with `Super+Button3`
-- `Super+Button1` or `Super+Button3` on a tiled window will turn it into a floating window first
-
-Dragging a floating window to another monitor moves it to that monitor.
-
-Dialogs and transient windows are floated automatically.
-
-## Workspaces
-
-holywm provides workspaces `1..9`.
-
-- each monitor keeps its own tree per workspace
-- switching workspace only shows windows from that workspace
-- focused windows can be moved to another workspace from keybinds
-- before hiding a workspace, holywm clears focus from its visible client; this
-  makes fullscreen games stop receiving normal X11 keyboard/mouse input after
-  you leave their workspace
-
-Simple rules are supported in `config.conf`:
-
-```conf
-rule = class:Librewolf = workspace:2
-rule = class:Pavucontrol = float
-rule = title:Open File = float
-```
-
-Rules can match `class`, `instance`, or `title`, and can apply `float`, `tile`, or `workspace:n`.
-
-## Multi-Monitor
-
-Each monitor keeps its own independent layout tree.
-
-- new windows open on the monitor under the pointer
-- focus and tiling stay local to that monitor
-- floating windows can move across monitor boundaries
-
-## Notes
-
-- config files are loaded from `/etc/holywm/config.conf`, then `./config.conf`, then `~/.config/holywm/config.conf`
-- after `sudo make install`, copy `config.conf` into `~/.config/holywm/config.conf` if you want a per-user config
-- use `make install PREFIX="$HOME/.local" SYSCONFDIR="$HOME/.config"` for a per-user install
-- media and brightness keys are optional
-- `Super+f` uses the WM fullscreen mode, while applications can still request real fullscreen through EWMH
-# holywm
+LHWM is an independent implementation inspired by the design and HolyC/Xlib
+approach of [vladbiber/holywm](https://github.com/vladbiber/holywm). The
+upstream repository is the reference project, not a source-code dependency.
+The LHWM files in this repository are newly authored and licensed under the
+MIT License. The HolyC compiler remains under its own upstream license.
