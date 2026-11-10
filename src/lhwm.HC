@@ -52,8 +52,6 @@ U64 bar_font;
 U64 bar_bg_pixel;
 U64 bar_fg_pixel;
 U64 bar_accent_pixel;
-U64 bar_icon_fg_pixel;
-U64 bar_icon_shadow_pixel;
 U64 bar_border_pixel;
 U64 workspace_border_pixel;
 U64 workspace_active_border_pixel;
@@ -68,7 +66,6 @@ I64 gap;
 I64 border_width;
 I64 bar_enabled;
 I64 bar_height;
-I64 bar_icon_enabled;
 I64 bar_font_warned;
 I64 clock_enabled;
 I64 clock_update_interval;
@@ -92,16 +89,12 @@ U8 normal_color[64];
 U8 bar_bg[64];
 U8 bar_fg[64];
 U8 bar_accent[64];
-U8 bar_icon_fg[64];
-U8 bar_icon_shadow[64];
 U8 bar_border_color[64];
 U8 workspace_border_color[64];
 U8 workspace_active_border[64];
 U8 workspace_active_bg[64];
 U8 workspace_fg[64];
 U8 workspace_active_fg[64];
-U8 bar_icon[64];
-U8 bar_icon_mark[16];
 U8 bar_font_name[96];
 U8 clock_format[128];
 U8 clock_text[128];
@@ -117,6 +110,7 @@ U0 manage(U64 win);
 U0 unmanage(U64 win);
 I64 client_index(U64 win);
 U0 focus_client(I64 index);
+U0 focus_client_ex(I64 index, I64 raise);
 U0 set_mode(I64 next_mode);
 U0 close_focused();
 U0 run_command(U8 *command);
@@ -210,23 +204,18 @@ U0 defaults()
   clock_enabled = 1;
   clock_update_interval = 1;
   bar_border_width = 1;
-  bar_icon_enabled = 1;
   layout = LAYOUT_MASTER;
   copystr(focus_color, 64, "#89b4fa");
   copystr(normal_color, 64, "#45475a");
   copystr(bar_bg, 64, "#1e1e2e");
   copystr(bar_fg, 64, "#cdd6f4");
   copystr(bar_accent, 64, "#d8ad4a");
-  copystr(bar_icon_fg, 64, "#ffffff");
-  copystr(bar_icon_shadow, 64, "#a85d26");
   copystr(bar_border_color, 64, "#45475a");
   copystr(workspace_border_color, 64, "#45475a");
   copystr(workspace_active_border, 64, "#d8ad4a");
   copystr(workspace_active_bg, 64, "#3b3528");
   copystr(workspace_fg, 64, "#a6adc8");
   copystr(workspace_active_fg, 64, "#ffffff");
-  copystr(bar_icon, 64, "HolyC");
-  copystr(bar_icon_mark, 16, "C+");
   copystr(bar_font_name, 96, "fixed");
   copystr(clock_format, 128, "%a %d %b  %H:%M");
   copystr(clock_text, 128, "--- -- ---  --:--");
@@ -356,11 +345,6 @@ U0 parse_scalar(U8 *line)
   else if (!strcasecmp(trim(key), "bar_fg")) copystr(bar_fg, 64, value);
   else if (!strcasecmp(trim(key), "bar_accent")) copystr(bar_accent, 64, value);
   else if (!strcasecmp(trim(key), "bar_border_color")) copystr(bar_border_color, 64, value);
-  else if (!strcasecmp(trim(key), "bar_icon_fg")) copystr(bar_icon_fg, 64, value);
-  else if (!strcasecmp(trim(key), "bar_icon_shadow")) copystr(bar_icon_shadow, 64, value);
-  else if (!strcasecmp(trim(key), "bar_icon_enabled")) bar_icon_enabled = parse_bool(value, bar_icon_enabled);
-  else if (!strcasecmp(trim(key), "bar_icon")) copystr(bar_icon, 64, value);
-  else if (!strcasecmp(trim(key), "bar_icon_mark")) copystr(bar_icon_mark, 16, value);
   else if (!strcasecmp(trim(key), "bar_font")) copystr(bar_font_name, 96, value);
   else if (!strcasecmp(trim(key), "workspace_border_color")) copystr(workspace_border_color, 64, value);
   else if (!strcasecmp(trim(key), "workspace_active_border")) copystr(workspace_active_border, 64, value);
@@ -430,61 +414,33 @@ U0 load_config()
   if (bar_border_width > 4) bar_border_width = 4;
 }
 
-U0 load_color_pixels()
+// Returns the pixel for a color name, or the fallback when it cannot be
+// allocated.  Success is judged by the return value and never by the pixel
+// number, because black legitimately has pixel 0 on TrueColor visuals.
+U64 alloc_pixel(U8 *name, U64 fallback)
 {
   XColor c1;
   XColor c2;
-  U64 old[1];
-  if (focus_pixel) { old[0] = focus_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (normal_pixel) { old[0] = normal_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (bar_bg_pixel) { old[0] = bar_bg_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (bar_fg_pixel) { old[0] = bar_fg_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (bar_accent_pixel) { old[0] = bar_accent_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (bar_icon_fg_pixel) { old[0] = bar_icon_fg_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (bar_icon_shadow_pixel) { old[0] = bar_icon_shadow_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (bar_border_pixel) { old[0] = bar_border_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (workspace_border_pixel) { old[0] = workspace_border_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (workspace_active_border_pixel) { old[0] = workspace_active_border_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (workspace_active_bg_pixel) { old[0] = workspace_active_bg_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (workspace_fg_pixel) { old[0] = workspace_fg_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  if (workspace_active_fg_pixel) { old[0] = workspace_active_fg_pixel; XFreeColors(dpy, cmap, old, 1, 0); }
-  focus_pixel = 0;
-  normal_pixel = 0;
-  bar_bg_pixel = 0;
-  bar_fg_pixel = 0;
-  bar_accent_pixel = 0;
-  bar_icon_fg_pixel = 0;
-  bar_icon_shadow_pixel = 0;
-  bar_border_pixel = 0;
-  workspace_border_pixel = 0;
-  workspace_active_border_pixel = 0;
-  workspace_active_bg_pixel = 0;
-  workspace_fg_pixel = 0;
-  workspace_active_fg_pixel = 0;
-  if (XAllocNamedColor(dpy, cmap, focus_color, &c1, &c2)) focus_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, normal_color, &c1, &c2)) normal_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, bar_bg, &c1, &c2)) bar_bg_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, bar_fg, &c1, &c2)) bar_fg_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, bar_accent, &c1, &c2)) bar_accent_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, bar_icon_fg, &c1, &c2)) bar_icon_fg_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, bar_icon_shadow, &c1, &c2)) bar_icon_shadow_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, bar_border_color, &c1, &c2)) bar_border_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, workspace_border_color, &c1, &c2)) workspace_border_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, workspace_active_border, &c1, &c2)) workspace_active_border_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, workspace_active_bg, &c1, &c2)) workspace_active_bg_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, workspace_fg, &c1, &c2)) workspace_fg_pixel = c1.pixel;
-  if (XAllocNamedColor(dpy, cmap, workspace_active_fg, &c1, &c2)) workspace_active_fg_pixel = c1.pixel;
-  if (!bar_bg_pixel) bar_bg_pixel = normal_pixel;
-  if (!bar_fg_pixel) bar_fg_pixel = focus_pixel;
-  if (!bar_accent_pixel) bar_accent_pixel = focus_pixel;
-  if (!bar_icon_fg_pixel) bar_icon_fg_pixel = bar_fg_pixel;
-  if (!bar_icon_shadow_pixel) bar_icon_shadow_pixel = bar_accent_pixel;
-  if (!bar_border_pixel) bar_border_pixel = normal_pixel;
-  if (!workspace_border_pixel) workspace_border_pixel = normal_pixel;
-  if (!workspace_active_border_pixel) workspace_active_border_pixel = bar_accent_pixel;
-  if (!workspace_active_bg_pixel) workspace_active_bg_pixel = bar_accent_pixel;
-  if (!workspace_fg_pixel) workspace_fg_pixel = bar_fg_pixel;
-  if (!workspace_active_fg_pixel) workspace_active_fg_pixel = bar_fg_pixel;
+  if (XAllocNamedColor(dpy, cmap, name, &c1, &c2)) return c1.pixel;
+  return fallback;
+}
+
+// Colors are not freed on reload: on TrueColor visuals XFreeColors is a
+// no-op, and freeing shared fallback pixels twice could release cells that
+// are still in use.
+U0 load_color_pixels()
+{
+  focus_pixel = alloc_pixel(focus_color, 0);
+  normal_pixel = alloc_pixel(normal_color, 0);
+  bar_bg_pixel = alloc_pixel(bar_bg, normal_pixel);
+  bar_fg_pixel = alloc_pixel(bar_fg, focus_pixel);
+  bar_accent_pixel = alloc_pixel(bar_accent, focus_pixel);
+  bar_border_pixel = alloc_pixel(bar_border_color, normal_pixel);
+  workspace_border_pixel = alloc_pixel(workspace_border_color, normal_pixel);
+  workspace_active_border_pixel = alloc_pixel(workspace_active_border, bar_accent_pixel);
+  workspace_active_bg_pixel = alloc_pixel(workspace_active_bg, bar_accent_pixel);
+  workspace_fg_pixel = alloc_pixel(workspace_fg, bar_fg_pixel);
+  workspace_active_fg_pixel = alloc_pixel(workspace_active_fg, bar_fg_pixel);
 }
 
 I64 bar_offset()
@@ -576,16 +532,11 @@ U0 load_bar_font()
 U0 draw_bar()
 {
   I64 baseline;
-  I64 logo_len;
-  I64 mark_len;
-  I64 logo_x;
-  I64 logo_y;
   I64 ws_start;
   I64 ws_top;
   I64 ws_x;
   I64 i;
   U8 ws_label[2];
-  XPoint logo_points[6];
   if (!bar_enabled || !bar_window || !bar_gc) return;
   XSetWindowBackground(dpy, bar_window, bar_bg_pixel);
   XClearWindow(dpy, bar_window);
@@ -612,34 +563,6 @@ U0 draw_bar()
     else XSetForeground(dpy, bar_gc, workspace_fg_pixel);
     ws_label[0] = '1' + i;
     XDrawString(dpy, bar_window, bar_gc, ws_x + 8, baseline, ws_label, 1);
-  }
-  if (bar_icon_enabled && bar_icon[0]) {
-    logo_len = StrLen(bar_icon);
-    if (logo_len > 48) logo_len = 48;
-    logo_x = screen_w - 18 - (logo_len * 8);
-    if (logo_x < 60) logo_x = 60;
-    logo_y = (bar_height - 20) / 2;
-    logo_points[0].x = logo_x - 32; logo_points[0].y = logo_y + 6;
-    logo_points[1].x = logo_x - 24; logo_points[1].y = logo_y;
-    logo_points[2].x = logo_x - 12; logo_points[2].y = logo_y;
-    logo_points[3].x = logo_x - 4;  logo_points[3].y = logo_y + 6;
-    logo_points[4].x = logo_x - 12; logo_points[4].y = logo_y + 20;
-    logo_points[5].x = logo_x - 24; logo_points[5].y = logo_y + 20;
-    XSetForeground(dpy, bar_gc, bar_accent_pixel);
-    XFillPolygon(dpy, bar_window, bar_gc, logo_points, 6, 2, 0);
-    logo_points[0].x = logo_x - 32; logo_points[0].y = logo_y + 14;
-    logo_points[1].x = logo_x - 12; logo_points[1].y = logo_y;
-    logo_points[2].x = logo_x - 4;  logo_points[2].y = logo_y + 6;
-    logo_points[3].x = logo_x - 12; logo_points[3].y = logo_y + 20;
-    logo_points[4].x = logo_x - 24; logo_points[4].y = logo_y + 20;
-    XSetForeground(dpy, bar_gc, bar_icon_shadow_pixel);
-    XFillPolygon(dpy, bar_window, bar_gc, logo_points, 5, 2, 0);
-    XSetForeground(dpy, bar_gc, bar_icon_fg_pixel);
-    mark_len = StrLen(bar_icon_mark);
-    if (mark_len > 2) mark_len = 2;
-    XDrawString(dpy, bar_window, bar_gc, logo_x - 27, baseline, bar_icon_mark, mark_len);
-    XSetForeground(dpy, bar_gc, bar_fg_pixel);
-    XDrawString(dpy, bar_window, bar_gc, logo_x, baseline, bar_icon, logo_len);
   }
   if (bar_border_width > 0) {
     XSetForeground(dpy, bar_gc, bar_border_pixel);
@@ -691,7 +614,7 @@ U0 configure_bar()
   }
 }
 
-// Keep color selection in a helper instead of a ?: expression inside an
+// Keep color selection in a helper instead of a ternary expression inside an
 // Xlib call; some hcc parser versions mis-parse that argument form.
 I64 border_pixel_for(I64 index)
 {
@@ -729,6 +652,13 @@ I64 visible_client_at(I64 position)
 
 U0 focus_client(I64 index)
 {
+  focus_client_ex(index, 1);
+}
+
+// Hover focus passes raise = 0 so merely moving the pointer never reshuffles
+// overlapping floating windows.
+U0 focus_client_ex(I64 index, I64 raise)
+{
   I64 i;
   U8 *active_data;
   if (index < 0 || index >= nclients) return;
@@ -737,7 +667,7 @@ U0 focus_client(I64 index)
     XSetWindowBorder(dpy, clients[i].win, border_pixel_for(i));
   }
   XSetInputFocus(dpy, clients[selected].win, RevertToPointerRoot, CurrentTime);
-  if (mode == MODE_FLOATING || layout == LAYOUT_MONOCLE) XRaiseWindow(dpy, clients[selected].win);
+  if (raise && (mode == MODE_FLOATING || layout == LAYOUT_MONOCLE)) XRaiseWindow(dpy, clients[selected].win);
   if (bar_enabled && bar_window) XRaiseWindow(dpy, bar_window);
   active_data = &clients[selected].win;
   XChangeProperty(dpy, root, net_active_window, XA_WINDOW, 32, PropModeReplace,
@@ -1011,6 +941,7 @@ U0 run_command(U8 *command)
   pid = fork();
   if (pid == 0) {
     setsid();
+    signal(SIGCHLD, SIG_DFL(U8 *));
     argv[0] = "/bin/sh";
     argv[1] = "-c";
     argv[2] = command;
@@ -1050,6 +981,26 @@ U0 run_action(Binding *binding)
   }
 }
 
+// Grab Mod4+Button1/3 for move and resize.  The Caps Lock and Num Lock
+// variants are grabbed too, otherwise dragging dies when either is on.
+U0 grab_window_buttons(U64 win)
+{
+  U32 locks[4];
+  I64 i;
+  locks[0] = 0;
+  locks[1] = LockMask;
+  locks[2] = Mod2Mask;
+  locks[3] = LockMask | Mod2Mask;
+  for (i = 0; i < 4; i++) {
+    XGrabButton(dpy, Button1, Mod4Mask | locks[i], win, False,
+        ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+        GrabModeAsync, GrabModeAsync, None, None);
+    XGrabButton(dpy, Button3, Mod4Mask | locks[i], win, False,
+        ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+        GrabModeAsync, GrabModeAsync, None, None);
+  }
+}
+
 U0 manage(U64 win)
 {
   XWindowAttributes wa;
@@ -1067,13 +1018,11 @@ U0 manage(U64 win)
   clients[i].mapped = 1;
   clients[i].ignore_unmap = 0;
   nclients++;
-  XSelectInput(dpy, win, StructureNotifyMask | ButtonPressMask);
-  XGrabButton(dpy, Button1, Mod4Mask, win, False,
-      ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-      GrabModeAsync, GrabModeAsync, None, None);
-  XGrabButton(dpy, Button3, Mod4Mask, win, False,
-      ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-      GrabModeAsync, GrabModeAsync, None, None);
+  // ButtonPressMask is exclusive: if the application already selected it, the
+  // whole request fails with BadAccess and EnterWindowMask would be lost too.
+  // Mod4 clicks reach us through the passive grabs below instead.
+  XSelectInput(dpy, win, StructureNotifyMask | EnterWindowMask);
+  grab_window_buttons(win);
   XSetWindowBorderWidth(dpy, win, border_width);
   XMapWindow(dpy, win);
   if (mode == MODE_FLOATING) {
@@ -1097,6 +1046,11 @@ U0 unmanage(U64 win)
   I64 j;
   I64 old_selected = selected;
   if (i < 0) return;
+  if (drag_mode && drag_client == i) {
+    XUngrabPointer(dpy, CurrentTime);
+    drag_mode = 0;
+    drag_client = -1;
+  }
   for (j = i; j < nclients - 1; j++) clients[j] = clients[j + 1];
   nclients--;
   if (old_selected > i) selected = old_selected - 1;
@@ -1205,6 +1159,18 @@ U0 handle_button(XButtonEvent *button)
       None, None, CurrentTime);
 }
 
+// Focus follows the mouse: entering a client window focuses it, no click.
+U0 handle_enter(XCrossingEvent *crossing)
+{
+  I64 i;
+  if (drag_mode) return;
+  if (crossing->mode != NotifyNormal || crossing->detail == NotifyInferior) return;
+  i = client_index(crossing->window);
+  if (i < 0 || i == selected) return;
+  if (clients[i].workspace != current_workspace) return;
+  focus_client_ex(i, 0);
+}
+
 U0 handle_motion(XMotionEvent *motion)
 {
   I32 dx;
@@ -1305,6 +1271,9 @@ U0 dispatch(XEvent *event)
       break;
     case ButtonPress:
       handle_button(&event->xbutton);
+      break;
+    case EnterNotify:
+      handle_enter(&event->xcrossing);
       break;
     case MotionNotify:
       handle_motion(&event->xmotion);
