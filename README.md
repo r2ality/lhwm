@@ -17,13 +17,13 @@ power-user workflow.
 
 Workspaces
 
-tiling mode 
+Tiling mode 
 
-floating mode 
+Floating mode 
 
-clock+date 
+Clock and Date (as a widget in the topbar)
 
-keybinds (+/-).
+Keybinds (+/-).
 
 **Not working:** 
 
