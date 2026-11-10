@@ -1,5 +1,3 @@
-![Logo](https://github.com/r2ality/lhwm/blob/main/demos/logo.png?raw=true)
-
 # LHWM — Lightweight HolyWM
 
 LHWM is a deliberately small X11 window manager written in **HolyC** using
