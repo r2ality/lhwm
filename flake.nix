@@ -63,7 +63,7 @@
 
           lhwm = pkgs.stdenv.mkDerivation {
             pname = "lhwm";
-            version = "1.1.0";
+            version = "1.1.1";
             src = self;
             nativeBuildInputs = [ hcc pkgs.gcc pkgs.gnumake ];
             # hcc's libtos may be shared; keep the compiler/runtime package
