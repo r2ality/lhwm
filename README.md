@@ -34,6 +34,7 @@ Not aware. Submit issues.
 **Fixed**
 
 Config generation has been fixed in the [unstable version of LHWM.](https://github.com/r2ality/lhwm/releases/tag/v.1.1.1u)
+
 Keybinds fully functional since the [latest stable release.](https://github.com/r2ality/lhwm/releases/tag/v.1.1.0s)
 
 ## Demo
