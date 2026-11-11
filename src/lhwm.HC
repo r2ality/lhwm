@@ -652,8 +652,11 @@ U0 write_default_config(U8 *path)
 {
   U8 *f = fopen(path, "w");
   I64 i;
-  if (!f) return;
-  fputs("// LHWM config.HC\n", f);
+  if (!f) {
+    "lhwm: cannot create %s (is the directory writable?)\n", path;
+    return;
+  }
+  fputs("// LHWM config.HC (v1.1.1)\n", f);
   fputs("// Edit this file, then press Mod4+r. Every change below is applied\n", f);
   fputs("// instantly: nothing is recompiled and the window manager keeps running.\n", f);
   fputs("//\n", f);
@@ -713,6 +716,7 @@ U0 write_default_config(U8 *path)
   fputs("// Rule(\"pcmanfm\", \"float\", 0);\n", f);
   fputs("// Rule(\"Pavucontrol\", \"float\", 0);\n", f);
   fclose(f);
+  "lhwm: created %s\n", path;
 }
 
 I64 file_exists(U8 *path)
