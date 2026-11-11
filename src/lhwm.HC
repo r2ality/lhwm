@@ -11,6 +11,10 @@
 #define LAYOUT_MASTER 0
 #define LAYOUT_COLUMNS 1
 #define LAYOUT_MONOCLE 2
+#define MAX_RULES 32
+#define RULE_FLOAT 1
+#define RULE_TILE 2
+#define RULE_WORKSPACE 3
 
 class Client
 {
@@ -22,13 +26,22 @@ class Client
   I32 workspace;
   I32 mapped;
   I32 ignore_unmap;
+  I32 floating;
+  I32 pad;
 };
 class Binding
 {
   U32 keycode;
   U32 mods;
+  U8 combo[48];
   U8 action[32];
   U8 command[256];
+};
+class WinRule
+{
+  U8 name[64];
+  I32 action;
+  I32 arg;
 };
 
 U8 *dpy;
@@ -43,6 +56,11 @@ U64 net_supporting_wm_check;
 U64 net_wm_name;
 U64 utf8_string;
 U64 support_window;
+U64 net_wm_window_type;
+U64 wtype_dialog;
+U64 wtype_utility;
+U64 wtype_splash;
+U64 wtype_toolbar;
 U64 cmap;
 U64 focus_pixel;
 U64 normal_pixel;
@@ -76,6 +94,8 @@ I64 nclients;
 I64 selected;
 I64 current_workspace;
 I64 nbinds;
+I64 nrules;
+I64 focus_follows;
 I64 drag_mode;
 I64 drag_client;
 I32 drag_start_x;
@@ -100,6 +120,8 @@ U8 clock_format[128];
 U8 clock_text[128];
 Client clients[MAX_CLIENTS];
 Binding binds[MAX_BINDS];
+WinRule rules[MAX_RULES];
+U8 cfg_line[700];
 
 I32 xerror(U8 *display, XErrorEvent *event);
 U0 defaults();
@@ -219,8 +241,10 @@ U0 defaults()
   copystr(bar_font_name, 96, "fixed");
   copystr(clock_format, 128, "%a %d %b  %H:%M");
   copystr(clock_text, 128, "--- -- ---  --:--");
+  focus_follows = 1;
   current_workspace = 1;
   nbinds = 0;
+  nrules = 0;
   add_binding("Mod4+Return", "spawn", "alacritty");
   add_binding("Mod4+q", "kill", "");
   add_binding("Mod4+d", "spawn", "dmenu_run");
@@ -281,6 +305,7 @@ U0 add_binding(U8 *combo, U8 *action, U8 *command)
   for (i = 0; i < nbinds; i++) {
     if (binds[i].keycode == keycode && binds[i].mods == mods) {
       b = &binds[i];
+      copystr(b->combo, 48, combo);
       copystr(b->action, 32, action);
       copystr(b->command, 256, command);
       return;
@@ -290,6 +315,7 @@ U0 add_binding(U8 *combo, U8 *action, U8 *command)
   b = &binds[nbinds];
   b->keycode = keycode;
   b->mods = mods;
+  copystr(b->combo, 48, combo);
   copystr(b->action, 32, action);
   copystr(b->command, 256, command);
   nbinds++;
@@ -313,6 +339,58 @@ U0 parse_bind(U8 *line)
   if (combo[0] && action[0]) add_binding(combo, action, p);
 }
 
+// Settings are matched with case, underscores and dashes ignored, so the
+// config.HC spelling "BarBg" and the legacy lhwm.conf spelling "bar_bg" are
+// the same key.  apply_setting returns 0 when the key is unknown.
+U0 normalize_key(U8 *key, U8 *out, I64 size)
+{
+  I64 n = 0;
+  while (*key && n < size - 1) {
+    if (*key != '_' && *key != '-' && *key != ' ') {
+      out[n] = *key;
+      n++;
+    }
+    key++;
+  }
+  out[n] = 0;
+}
+
+I64 apply_setting(U8 *raw_key, U8 *value)
+{
+  U8 key[64];
+  normalize_key(trim(raw_key), key, 64);
+  if (!strcasecmp(key, "gap")) gap = to_int(value);
+  else if (!strcasecmp(key, "borderwidth")) border_width = to_int(value);
+  else if (!strcasecmp(key, "masterratio")) master_ratio = to_int(value);
+  else if (!strcasecmp(key, "layout")) {
+    if (!strcasecmp(value, "columns")) layout = LAYOUT_COLUMNS;
+    else if (!strcasecmp(value, "monocle")) layout = LAYOUT_MONOCLE;
+    else layout = LAYOUT_MASTER;
+  }
+  else if (!strcasecmp(key, "focusfollowsmouse")) focus_follows = parse_bool(value, focus_follows);
+  else if (!strcasecmp(key, "borderfocus")) copystr(focus_color, 64, value);
+  else if (!strcasecmp(key, "bordernormal")) copystr(normal_color, 64, value);
+  else if (!strcasecmp(key, "barenabled")) bar_enabled = parse_bool(value, bar_enabled);
+  else if (!strcasecmp(key, "barheight")) bar_height = to_int(value);
+  else if (!strcasecmp(key, "clockenabled")) clock_enabled = parse_bool(value, clock_enabled);
+  else if (!strcasecmp(key, "clockformat")) copystr(clock_format, 128, value);
+  else if (!strcasecmp(key, "clockupdateinterval")) clock_update_interval = to_int(value);
+  else if (!strcasecmp(key, "barborderwidth")) bar_border_width = to_int(value);
+  else if (!strcasecmp(key, "barbg")) copystr(bar_bg, 64, value);
+  else if (!strcasecmp(key, "barfg")) copystr(bar_fg, 64, value);
+  else if (!strcasecmp(key, "baraccent")) copystr(bar_accent, 64, value);
+  else if (!strcasecmp(key, "barbordercolor")) copystr(bar_border_color, 64, value);
+  else if (!strcasecmp(key, "barfont")) copystr(bar_font_name, 96, value);
+  else if (!strcasecmp(key, "workspacebordercolor")) copystr(workspace_border_color, 64, value);
+  else if (!strcasecmp(key, "workspaceactiveborder")) copystr(workspace_active_border, 64, value);
+  else if (!strcasecmp(key, "workspaceactivebg")) copystr(workspace_active_bg, 64, value);
+  else if (!strcasecmp(key, "workspacefg")) copystr(workspace_fg, 64, value);
+  else if (!strcasecmp(key, "workspaceactivefg")) copystr(workspace_active_fg, 64, value);
+  else return 0;
+  return 1;
+}
+
+// Legacy lhwm.conf line: key = value
 U0 parse_scalar(U8 *line)
 {
   U8 key[64];
@@ -325,41 +403,145 @@ U0 parse_scalar(U8 *line)
   MemCpy(key, line, n);
   key[n] = 0;
   copystr(value, 256, trim(eq + 1));
-  if (!strcasecmp(trim(key), "gap")) gap = to_int(value);
-  else if (!strcasecmp(trim(key), "border_width")) border_width = to_int(value);
-  else if (!strcasecmp(trim(key), "master_ratio")) master_ratio = to_int(value);
-  else if (!strcasecmp(trim(key), "layout")) {
-    if (!strcasecmp(value, "columns")) layout = LAYOUT_COLUMNS;
-    else if (!strcasecmp(value, "monocle")) layout = LAYOUT_MONOCLE;
-    else layout = LAYOUT_MASTER;
+  apply_setting(key, value);
+}
+
+U0 add_rule(U8 *name, U8 *action, U8 *arg)
+{
+  WinRule *r;
+  I64 code = 0;
+  I64 workspace = 0;
+  if (nrules >= MAX_RULES || !name || !*name) return;
+  if (!strcasecmp(action, "float")) code = RULE_FLOAT;
+  else if (!strcasecmp(action, "tile")) code = RULE_TILE;
+  else if (!strcasecmp(action, "workspace")) {
+    code = RULE_WORKSPACE;
+    workspace = to_int(arg);
+    if (workspace < 1 || workspace > WORKSPACE_COUNT) return;
   }
-  else if (!strcasecmp(trim(key), "border_focus")) copystr(focus_color, 64, value);
-  else if (!strcasecmp(trim(key), "border_normal")) copystr(normal_color, 64, value);
-  else if (!strcasecmp(trim(key), "bar_enabled")) bar_enabled = parse_bool(value, bar_enabled);
-  else if (!strcasecmp(trim(key), "bar_height")) bar_height = to_int(value);
-  else if (!strcasecmp(trim(key), "clock_enabled")) clock_enabled = parse_bool(value, clock_enabled);
-  else if (!strcasecmp(trim(key), "clock_format")) copystr(clock_format, 128, value);
-  else if (!strcasecmp(trim(key), "clock_update_interval")) clock_update_interval = to_int(value);
-  else if (!strcasecmp(trim(key), "bar_border_width")) bar_border_width = to_int(value);
-  else if (!strcasecmp(trim(key), "bar_bg")) copystr(bar_bg, 64, value);
-  else if (!strcasecmp(trim(key), "bar_fg")) copystr(bar_fg, 64, value);
-  else if (!strcasecmp(trim(key), "bar_accent")) copystr(bar_accent, 64, value);
-  else if (!strcasecmp(trim(key), "bar_border_color")) copystr(bar_border_color, 64, value);
-  else if (!strcasecmp(trim(key), "bar_font")) copystr(bar_font_name, 96, value);
-  else if (!strcasecmp(trim(key), "workspace_border_color")) copystr(workspace_border_color, 64, value);
-  else if (!strcasecmp(trim(key), "workspace_active_border")) copystr(workspace_active_border, 64, value);
-  else if (!strcasecmp(trim(key), "workspace_active_bg")) copystr(workspace_active_bg, 64, value);
-  else if (!strcasecmp(trim(key), "workspace_fg")) copystr(workspace_fg, 64, value);
-  else if (!strcasecmp(trim(key), "workspace_active_fg")) copystr(workspace_active_fg, 64, value);
+  if (!code) return;
+  r = &rules[nrules];
+  copystr(r->name, 64, name);
+  r->action = code;
+  r->arg = workspace;
+  nrules++;
+}
+
+// Reads one argument of a config.HC statement: either a "quoted string" (with
+// \" and \\ escapes) or a bare token.  Returns the position of the delimiter
+// that ended it.
+U8 *read_arg(U8 *p, U8 *out, I64 size)
+{
+  I64 n = 0;
+  while (*p == ' ' || *p == '\t') p++;
+  if (*p == '"') {
+    p++;
+    while (*p && *p != '"') {
+      if (*p == '\\' && p[1]) p++;
+      if (n < size - 1) {
+        out[n] = *p;
+        n++;
+      }
+      p++;
+    }
+    if (*p == '"') p++;
+    out[n] = 0;
+  } else {
+    while (*p && *p != ',' && *p != ')' && *p != ';') {
+      if (n < size - 1) {
+        out[n] = *p;
+        n++;
+      }
+      p++;
+    }
+    while (n > 0 && (out[n - 1] == ' ' || out[n - 1] == '\t')) n--;
+    out[n] = 0;
+  }
+  while (*p && *p != ',' && *p != ')' && *p != ';') p++;
+  return p;
+}
+
+// One config.HC statement per line:
+//   Setting = value;
+//   Bind("Mod4+Return", "spawn", "alacritty");
+//   Rule("Thunar", "workspace", 9);
+U0 parse_hc_line(U8 *line)
+{
+  U8 a0[256];
+  U8 a1[256];
+  U8 a2[256];
+  U8 name[64];
+  U8 *p;
+  U8 *paren;
+  U8 *eq;
+  I64 in_quote = 0;
+  I64 n;
+  // Strip // comments, but never inside a quoted string.
+  p = line;
+  while (*p) {
+    if (in_quote && *p == '\\' && p[1]) {
+      p += 2;
+      continue;
+    }
+    if (*p == '"') in_quote = !in_quote;
+    else if (!in_quote && *p == '/' && p[1] == '/') {
+      *p = 0;
+      break;
+    }
+    p++;
+  }
+  p = trim(line);
+  if (!*p) return;
+  paren = strchr(p, '(');
+  eq = strchr(p, '=');
+  a0[0] = 0;
+  a1[0] = 0;
+  a2[0] = 0;
+  if (paren && (!eq || paren < eq)) {
+    n = paren - p;
+    if (n > 63) n = 63;
+    MemCpy(name, p, n);
+    name[n] = 0;
+    p = read_arg(paren + 1, a0, 256);
+    if (*p == ',') p = read_arg(p + 1, a1, 256);
+    if (*p == ',') p = read_arg(p + 1, a2, 256);
+    if (!strcasecmp(trim(name), "Bind")) {
+      if (a0[0] && a1[0]) add_binding(a0, a1, a2);
+    } else if (!strcasecmp(trim(name), "Rule")) {
+      add_rule(a0, a1, a2);
+    } else {
+      "lhwm: config: unknown statement %s\n", trim(name);
+    }
+  } else if (eq) {
+    n = eq - p;
+    if (n > 63) n = 63;
+    MemCpy(name, p, n);
+    name[n] = 0;
+    read_arg(eq + 1, a0, 256);
+    if (!apply_setting(name, a0)) "lhwm: config: unknown setting %s\n", trim(name);
+  }
+}
+
+I64 is_hc_path(U8 *path)
+{
+  I64 n = StrLen(path);
+  if (n < 3) return 0;
+  return !strcasecmp(path + n - 3, ".HC");
 }
 
 U0 read_config_file(U8 *path)
 {
   U8 *file = fopen(path, "r");
-  U8 line[512];
+  U8 line[1024];
   U8 *p;
+  I64 hc;
   if (!file) return;
-  while (fgets(line, 512, file)) {
+  hc = is_hc_path(path);
+  while (fgets(line, 1024, file)) {
+    if (hc) {
+      parse_hc_line(line);
+      continue;
+    }
     p = trim(line);
     if (!*p || *p == '#') continue;
     if (!strncasecmp(p, "bind", 4)) parse_bind(p);
@@ -368,12 +550,220 @@ U0 read_config_file(U8 *path)
   fclose(file);
 }
 
+// --- Generating the default config.HC --------------------------------------
+
+U0 cat_to(U8 *dst, I64 size, U8 *src)
+{
+  I64 n = StrLen(dst);
+  if (n >= size - 1) return;
+  copystr(dst + n, size - n, src);
+}
+
+U0 cat_escaped(U8 *dst, I64 size, U8 *src)
+{
+  I64 n = StrLen(dst);
+  while (*src && n < size - 3) {
+    if (*src == '"' || *src == '\\') {
+      dst[n] = '\\';
+      n++;
+    }
+    dst[n] = *src;
+    n++;
+    src++;
+  }
+  dst[n] = 0;
+}
+
+U0 int_to_text(I64 v, U8 *out)
+{
+  U8 tmp[24];
+  I64 n = 0;
+  I64 i = 0;
+  if (v == 0) {
+    out[0] = '0';
+    out[1] = 0;
+    return;
+  }
+  if (v < 0) {
+    out[i] = '-';
+    i++;
+    v = -v;
+  }
+  while (v > 0) {
+    tmp[n] = '0' + (v % 10);
+    n++;
+    v = v / 10;
+  }
+  while (n > 0) {
+    n--;
+    out[i] = tmp[n];
+    i++;
+  }
+  out[i] = 0;
+}
+
+U0 emit_text(U8 *f, U8 *key, U8 *value)
+{
+  cfg_line[0] = 0;
+  cat_to(cfg_line, 700, key);
+  cat_to(cfg_line, 700, " = \"");
+  cat_escaped(cfg_line, 700, value);
+  cat_to(cfg_line, 700, "\";\n");
+  fputs(cfg_line, f);
+}
+
+U0 emit_int(U8 *f, U8 *key, I64 value)
+{
+  U8 number[24];
+  int_to_text(value, number);
+  cfg_line[0] = 0;
+  cat_to(cfg_line, 700, key);
+  cat_to(cfg_line, 700, " = ");
+  cat_to(cfg_line, 700, number);
+  cat_to(cfg_line, 700, ";\n");
+  fputs(cfg_line, f);
+}
+
+U0 emit_bool(U8 *f, U8 *key, I64 value)
+{
+  cfg_line[0] = 0;
+  cat_to(cfg_line, 700, key);
+  if (value) cat_to(cfg_line, 700, " = TRUE;\n");
+  else cat_to(cfg_line, 700, " = FALSE;\n");
+  fputs(cfg_line, f);
+}
+
+U0 emit_bind(U8 *f, Binding *b)
+{
+  cfg_line[0] = 0;
+  cat_to(cfg_line, 700, "Bind(\"");
+  cat_escaped(cfg_line, 700, b->combo);
+  cat_to(cfg_line, 700, "\", \"");
+  cat_escaped(cfg_line, 700, b->action);
+  cat_to(cfg_line, 700, "\", \"");
+  cat_escaped(cfg_line, 700, b->command);
+  cat_to(cfg_line, 700, "\");\n");
+  fputs(cfg_line, f);
+}
+
+// Writes the settings that are currently loaded (built-in defaults plus any
+// older lhwm.conf) so an existing setup carries over unchanged.
+U0 write_default_config(U8 *path)
+{
+  U8 *f = fopen(path, "w");
+  I64 i;
+  if (!f) return;
+  fputs("// LHWM config.HC\n", f);
+  fputs("// Edit this file, then press Mod4+r. Every change below is applied\n", f);
+  fputs("// instantly: nothing is recompiled and the window manager keeps running.\n", f);
+  fputs("//\n", f);
+  fputs("// One statement per line, ending with a semicolon. // starts a comment.\n", f);
+  fputs("//   Setting = value;                    number, TRUE/FALSE or \"text\"\n", f);
+  fputs("//   Bind(\"Mod4+Key\", \"action\", \"command\");    add or replace a keybind\n", f);
+  fputs("//   Rule(\"WM_CLASS\", \"action\", argument);     per-application window rule\n", f);
+  fputs("// Colors are X color names or hex values such as \"#1e1e2e\".\n", f);
+  fputs("\n// ---- Layout -----------------------------------------------------------\n", f);
+  fputs("// Layout: \"master-stack\", \"columns\" or \"monocle\" (Mod4+Tab cycles them).\n", f);
+  if (layout == LAYOUT_COLUMNS) emit_text(f, "Layout", "columns");
+  else if (layout == LAYOUT_MONOCLE) emit_text(f, "Layout", "monocle");
+  else emit_text(f, "Layout", "master-stack");
+  emit_int(f, "Gap", gap);
+  emit_int(f, "BorderWidth", border_width);
+  fputs("// Percentage of the screen width given to the master window.\n", f);
+  emit_int(f, "MasterRatio", master_ratio);
+  emit_text(f, "BorderFocus", focus_color);
+  emit_text(f, "BorderNormal", normal_color);
+  fputs("\n// ---- Focus ------------------------------------------------------------\n", f);
+  fputs("// TRUE focuses a window as soon as the mouse enters it. Hovering never raises.\n", f);
+  emit_bool(f, "FocusFollowsMouse", focus_follows);
+  fputs("\n// ---- Top bar ----------------------------------------------------------\n", f);
+  emit_bool(f, "BarEnabled", bar_enabled);
+  emit_int(f, "BarHeight", bar_height);
+  emit_int(f, "BarBorderWidth", bar_border_width);
+  emit_text(f, "BarBorderColor", bar_border_color);
+  emit_text(f, "BarBg", bar_bg);
+  emit_text(f, "BarFg", bar_fg);
+  emit_text(f, "BarAccent", bar_accent);
+  fputs("// An X11 core font name; \"fixed\" and \"6x13\" are tried if it is missing.\n", f);
+  emit_text(f, "BarFont", bar_font_name);
+  fputs("\n// ---- Clock ------------------------------------------------------------\n", f);
+  emit_bool(f, "ClockEnabled", clock_enabled);
+  fputs("// strftime format, for example \"%H:%M\" or \"%a %d %b  %H:%M\".\n", f);
+  emit_text(f, "ClockFormat", clock_format);
+  fputs("// Seconds between clock refreshes.\n", f);
+  emit_int(f, "ClockUpdateInterval", clock_update_interval);
+  fputs("\n// ---- Workspace squares ------------------------------------------------\n", f);
+  emit_text(f, "WorkspaceBorderColor", workspace_border_color);
+  emit_text(f, "WorkspaceActiveBorder", workspace_active_border);
+  emit_text(f, "WorkspaceActiveBg", workspace_active_bg);
+  emit_text(f, "WorkspaceFg", workspace_fg);
+  emit_text(f, "WorkspaceActiveFg", workspace_active_fg);
+  fputs("\n// ---- Keybinds ---------------------------------------------------------\n", f);
+  fputs("// Modifiers: Mod4 (Super), Shift, Ctrl, Alt.\n", f);
+  fputs("// Actions: spawn COMMAND, kill, quit, reload, mode, focus_next, focus_prev,\n", f);
+  fputs("//          layout_next, workspace N, move_workspace N, none (unbinds a key).\n", f);
+  for (i = 0; i < nbinds; i++) emit_bind(f, &binds[i]);
+  fputs("\n// ---- Window rules -----------------------------------------------------\n", f);
+  fputs("// Dialogs, pop-ups and other transient windows float automatically instead of\n", f);
+  fputs("// being tiled. A rule matches a window's WM_CLASS (see: xprop WM_CLASS).\n", f);
+  fputs("// Actions: \"float\", \"tile\", \"workspace\" (opens it silently on that workspace,\n", f);
+  fputs("// without switching to it or taking focus). Rules apply to windows opened\n", f);
+  fputs("// after the reload. Examples:\n", f);
+  fputs("// Rule(\"Thunar\", \"workspace\", 9);\n", f);
+  fputs("// Rule(\"pcmanfm\", \"float\", 0);\n", f);
+  fputs("// Rule(\"Pavucontrol\", \"float\", 0);\n", f);
+  fclose(f);
+}
+
+I64 file_exists(U8 *path)
+{
+  U8 *f = fopen(path, "r");
+  if (!f) return 0;
+  fclose(f);
+  return 1;
+}
+
+I64 user_config_dir(U8 *out, I64 size)
+{
+  U8 *xdg = getenv("XDG_CONFIG_HOME");
+  U8 *home = getenv("HOME");
+  if (xdg && *xdg) {
+    copystr(out, size, xdg);
+    cat_to(out, size, "/lhwm");
+    return 1;
+  }
+  if (home && *home) {
+    copystr(out, size, home);
+    cat_to(out, size, "/.config/lhwm");
+    return 1;
+  }
+  return 0;
+}
+
+// Creates ~/.config and ~/.config/lhwm (or $XDG_CONFIG_HOME/lhwm).
+U0 make_config_dir()
+{
+  U8 *xdg = getenv("XDG_CONFIG_HOME");
+  U8 *home = getenv("HOME");
+  U8 path[512];
+  if (xdg && *xdg) {
+    mkdir(xdg, 493);
+    copystr(path, 512, xdg);
+  } else if (home && *home) {
+    copystr(path, 512, home);
+    cat_to(path, 512, "/.config");
+    mkdir(path, 493);
+  } else return;
+  cat_to(path, 512, "/lhwm");
+  mkdir(path, 493);
+}
+
 U0 load_config()
 {
-  U8 *home;
-  U8 *xdg;
-  U8 *custom;
   U8 *default_config;
+  U8 *custom;
+  U8 dir[480];
+  U8 legacy[512];
   U8 path[512];
   I64 previous_workspace = current_workspace;
   defaults();
@@ -385,19 +775,21 @@ U0 load_config()
   custom = getenv("LHWM_CONFIG");
   if (custom && *custom) {
     read_config_file(custom);
-  } else {
-    xdg = getenv("XDG_CONFIG_HOME");
-    home = getenv("HOME");
-    if (xdg && *xdg) {
-      copystr(path, 512, xdg);
-      if (StrLen(path) < 500) StrCpy(path + StrLen(path), "/lhwm/lhwm.conf");
-    } else if (home && *home) {
-      copystr(path, 512, home);
-      if (StrLen(path) < 500) StrCpy(path + StrLen(path), "/.config/lhwm/lhwm.conf");
-    } else {
-      copystr(path, 512, "./lhwm.conf");
+  } else if (user_config_dir(dir, 480)) {
+    copystr(legacy, 512, dir);
+    cat_to(legacy, 512, "/lhwm.conf");
+    copystr(path, 512, dir);
+    cat_to(path, 512, "/config.HC");
+    // An older lhwm.conf is honored once and carried into the new file.
+    read_config_file(legacy);
+    if (!file_exists(path)) {
+      make_config_dir();
+      write_default_config(path);
     }
     read_config_file(path);
+  } else {
+    read_config_file("./lhwm.conf");
+    read_config_file("./config.HC");
   }
   if (gap < 0) gap = 0;
   if (gap > 96) gap = 96;
@@ -687,11 +1079,42 @@ U0 set_client_geometry(I64 i, I32 x, I32 y, I32 w, I32 h)
   XMoveResizeWindow(dpy, clients[i].win, x, y, w, h);
 }
 
+I64 tiled_count()
+{
+  I64 i;
+  I64 count = 0;
+  for (i = 0; i < nclients; i++)
+    if (clients[i].workspace == current_workspace && !clients[i].floating) count++;
+  return count;
+}
+
+I64 tiled_client_at(I64 position)
+{
+  I64 i;
+  I64 count = 0;
+  for (i = 0; i < nclients; i++) {
+    if (clients[i].workspace != current_workspace || clients[i].floating) continue;
+    if (count == position) return i;
+    count++;
+  }
+  return -1;
+}
+
+// Floating clients (dialogs and rule matches) sit above the tiled windows.
+U0 raise_floating_clients()
+{
+  I64 i;
+  for (i = 0; i < nclients; i++)
+    if (clients[i].workspace == current_workspace && clients[i].floating && clients[i].mapped)
+      XRaiseWindow(dpy, clients[i].win);
+}
+
 U0 arrange()
 {
   I64 pos;
   I64 index;
-  I64 count = visible_count();
+  I64 count = tiled_count();
+  I64 total = visible_count();
   I64 usable_w;
   I64 usable_h;
   I64 master_w;
@@ -703,14 +1126,14 @@ U0 arrange()
   I64 col_w;
   I64 x;
   I64 top = bar_offset();
-  if (count <= 0) {
+  if (total <= 0) {
     selected = -1;
     if (bar_window) XRaiseWindow(dpy, bar_window);
     XFlush(dpy);
     return;
   }
   if (mode == MODE_FLOATING) {
-    for (pos = 0; pos < count; pos++) {
+    for (pos = 0; pos < total; pos++) {
       index = visible_client_at(pos);
       XSetWindowBorderWidth(dpy, clients[index].win, border_width);
       XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
@@ -721,65 +1144,68 @@ U0 arrange()
     XFlush(dpy);
     return;
   }
-  usable_w = screen_w - (2 * gap);
-  usable_h = screen_h - top - (2 * gap);
-  if (usable_w < 100) usable_w = 100;
-  if (usable_h < 80) usable_h = 80;
-  if (layout == LAYOUT_MONOCLE) {
-    for (pos = 0; pos < count; pos++) {
-      index = visible_client_at(pos);
+  if (count > 0) {
+    usable_w = screen_w - (2 * gap);
+    usable_h = screen_h - top - (2 * gap);
+    if (usable_w < 100) usable_w = 100;
+    if (usable_h < 80) usable_h = 80;
+    if (layout == LAYOUT_MONOCLE) {
+      for (pos = 0; pos < count; pos++) {
+        index = tiled_client_at(pos);
+        XSetWindowBorderWidth(dpy, clients[index].win, border_width);
+        XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
+        set_client_geometry(index, gap, top + gap,
+            usable_w - 2 * border_width, usable_h - 2 * border_width);
+        if (index == selected) XRaiseWindow(dpy, clients[index].win);
+      }
+    } else if (layout == LAYOUT_COLUMNS) {
+      col_w = usable_w / count;
+      x = gap;
+      for (pos = 0; pos < count; pos++) {
+        I64 this_w = col_w;
+        index = tiled_client_at(pos);
+        if (pos == count - 1) this_w = screen_w - gap - x;
+        XSetWindowBorderWidth(dpy, clients[index].win, border_width);
+        XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
+        set_client_geometry(index, x, top + gap,
+            this_w - 2 * border_width, usable_h - 2 * border_width);
+        x += col_w;
+      }
+    } else if (count == 1) {
+      index = tiled_client_at(0);
+      XSetWindowBorderWidth(dpy, clients[index].win, border_width);
+      XSetWindowBorder(dpy, clients[index].win, focus_pixel);
+      set_client_geometry(index, gap, top + gap,
+          usable_w - 2 * border_width, usable_h - 2 * border_width);
+    } else {
+      master_w = ((usable_w - gap) * master_ratio) / 100;
+      stack_w = usable_w - master_w - gap;
+      if (master_w < 160) master_w = 160;
+      if (stack_w < 120) stack_w = 120;
+      count_stack = count - 1;
+      base_h = (usable_h - ((count_stack - 1) * gap)) / count_stack;
+      extra_h = (usable_h - ((count_stack - 1) * gap)) - (base_h * count_stack);
+      index = tiled_client_at(0);
       XSetWindowBorderWidth(dpy, clients[index].win, border_width);
       XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
       set_client_geometry(index, gap, top + gap,
-          usable_w - 2 * border_width, usable_h - 2 * border_width);
-      if (index == selected) XRaiseWindow(dpy, clients[index].win);
-    }
-  } else if (layout == LAYOUT_COLUMNS) {
-    col_w = usable_w / count;
-    x = gap;
-    for (pos = 0; pos < count; pos++) {
-      I64 this_w = col_w;
-      index = visible_client_at(pos);
-      if (pos == count - 1) this_w = screen_w - gap - x;
-      XSetWindowBorderWidth(dpy, clients[index].win, border_width);
-      XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
-      set_client_geometry(index, x, top + gap,
-          this_w - 2 * border_width, usable_h - 2 * border_width);
-      x += col_w;
-    }
-  } else if (count == 1) {
-    index = visible_client_at(0);
-    XSetWindowBorderWidth(dpy, clients[index].win, border_width);
-    XSetWindowBorder(dpy, clients[index].win, focus_pixel);
-    set_client_geometry(index, gap, top + gap,
-        usable_w - 2 * border_width, usable_h - 2 * border_width);
-  } else {
-    master_w = ((usable_w - gap) * master_ratio) / 100;
-    stack_w = usable_w - master_w - gap;
-    if (master_w < 160) master_w = 160;
-    if (stack_w < 120) stack_w = 120;
-    count_stack = count - 1;
-    base_h = (usable_h - ((count_stack - 1) * gap)) / count_stack;
-    extra_h = (usable_h - ((count_stack - 1) * gap)) - (base_h * count_stack);
-    index = visible_client_at(0);
-    XSetWindowBorderWidth(dpy, clients[index].win, border_width);
-    XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
-    set_client_geometry(index, gap, top + gap,
-        master_w - 2 * border_width, usable_h - 2 * border_width);
-    y = top + gap;
-    for (pos = 1; pos < count; pos++) {
-      I64 this_h = base_h;
-      index = visible_client_at(pos);
-      if (pos == count - 1) this_h += extra_h;
-      XSetWindowBorderWidth(dpy, clients[index].win, border_width);
-      XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
-      set_client_geometry(index, gap + master_w + gap, y,
-          stack_w - 2 * border_width, this_h - 2 * border_width);
-      y += this_h + gap;
+          master_w - 2 * border_width, usable_h - 2 * border_width);
+      y = top + gap;
+      for (pos = 1; pos < count; pos++) {
+        I64 this_h = base_h;
+        index = tiled_client_at(pos);
+        if (pos == count - 1) this_h += extra_h;
+        XSetWindowBorderWidth(dpy, clients[index].win, border_width);
+        XSetWindowBorder(dpy, clients[index].win, border_pixel_for(index));
+        set_client_geometry(index, gap + master_w + gap, y,
+            stack_w - 2 * border_width, this_h - 2 * border_width);
+        y += this_h + gap;
+      }
     }
   }
   if (selected >= 0 && selected < nclients && clients[selected].workspace == current_workspace && layout != LAYOUT_MONOCLE)
     XRaiseWindow(dpy, clients[selected].win);
+  raise_floating_clients();
   if (bar_window) XRaiseWindow(dpy, bar_window);
   XFlush(dpy);
 }
@@ -794,6 +1220,8 @@ U0 grab_keys()
   for (i = 0; i < nbinds; i++) {
     code = binds[i].keycode;
     if (!code) continue;
+    // Action "none" unbinds a key: leave it ungrabbed so applications get it.
+    if (!strcasecmp(binds[i].action, "none")) continue;
     XGrabKey(dpy, code, binds[i].mods, root, False, GrabModeAsync, GrabModeAsync);
     XGrabKey(dpy, code, binds[i].mods | LockMask, root, False, GrabModeAsync, GrabModeAsync);
     XGrabKey(dpy, code, binds[i].mods | Mod2Mask, root, False, GrabModeAsync, GrabModeAsync);
@@ -1001,22 +1429,103 @@ U0 grab_window_buttons(U64 win)
   }
 }
 
+// Dialogs, utility windows and splash screens should appear next to the
+// tiled layout, not become a tile themselves.  Transient windows (file
+// choosers, rename boxes, "save as" and similar) are the usual case.
+I64 window_wants_float(U64 win)
+{
+  U64 parent = 0;
+  U64 actual_type = 0;
+  I32 actual_format = 0;
+  U64 nitems = 0;
+  U64 bytes_after = 0;
+  U8 *data = NULL;
+  U64 *atoms;
+  I64 j;
+  I64 result = 0;
+  if (XGetTransientForHint(dpy, win, &parent) && parent) result = 1;
+  if (XGetWindowProperty(dpy, win, net_wm_window_type, 0, 8, False, XA_ATOM,
+      &actual_type, &actual_format, &nitems, &bytes_after, &data) == 0 && data) {
+    if (actual_format == 32) {
+      atoms = data(U64 *);
+      for (j = 0; j < nitems; j++) {
+        if (atoms[j] == wtype_dialog || atoms[j] == wtype_utility ||
+            atoms[j] == wtype_splash || atoms[j] == wtype_toolbar) result = 1;
+      }
+    }
+    XFree(data);
+  }
+  return result;
+}
+
+I64 rule_matches(WinRule *rule, U8 *name, U8 *cls)
+{
+  if (!strcasecmp(rule->name, name)) return 1;
+  if (!strcasecmp(rule->name, cls)) return 1;
+  return 0;
+}
+
+// Centers a floating window on the usable screen area, keeping the size the
+// application asked for.
+U0 place_floating(I64 i)
+{
+  I64 top = bar_offset();
+  I32 w = clients[i].w;
+  I32 h = clients[i].h;
+  I32 x;
+  I32 y;
+  if (w <= 1 || h <= 1) {
+    w = screen_w * 50 / 100;
+    h = (screen_h - top) * 50 / 100;
+  }
+  if (w > screen_w - (2 * border_width)) w = screen_w - (2 * border_width);
+  if (h > screen_h - top - (2 * border_width)) h = screen_h - top - (2 * border_width);
+  x = (screen_w - w) / 2;
+  y = top + ((screen_h - top - h) / 2);
+  if (x < 0) x = 0;
+  if (y < top) y = top;
+  set_client_geometry(i, x, y, w, h);
+}
+
 U0 manage(U64 win)
 {
   XWindowAttributes wa;
+  XClassHint hint;
+  U8 cname[64];
+  U8 cclass[64];
   I64 i;
+  I64 j;
+  I64 target;
   if (client_index(win) >= 0 || nclients >= MAX_CLIENTS) return;
   if (!XGetWindowAttributes(dpy, win, &wa) || wa.override_redirect) return;
   if (wa.map_state == IsViewable && wa.width <= 1 && wa.height <= 1) return;
+  cname[0] = 0;
+  cclass[0] = 0;
+  hint.res_name = NULL;
+  hint.res_class = NULL;
+  if (XGetClassHint(dpy, win, &hint)) {
+    copystr(cname, 64, hint.res_name);
+    copystr(cclass, 64, hint.res_class);
+    if (hint.res_name) XFree(hint.res_name);
+    if (hint.res_class) XFree(hint.res_class);
+  }
   i = nclients;
   clients[i].win = win;
   clients[i].x = wa.x;
   clients[i].y = wa.y;
   clients[i].w = wa.width;
   clients[i].h = wa.height;
-  clients[i].workspace = current_workspace;
   clients[i].mapped = 1;
   clients[i].ignore_unmap = 0;
+  clients[i].floating = window_wants_float(win);
+  target = current_workspace;
+  for (j = 0; j < nrules; j++) {
+    if (!rule_matches(&rules[j], cname, cclass)) continue;
+    if (rules[j].action == RULE_FLOAT) clients[i].floating = 1;
+    else if (rules[j].action == RULE_TILE) clients[i].floating = 0;
+    else if (rules[j].action == RULE_WORKSPACE) target = rules[j].arg;
+  }
+  clients[i].workspace = target;
   nclients++;
   // ButtonPressMask is exclusive: if the application already selected it, the
   // whole request fails with BadAccess and EnterWindowMask would be lost too.
@@ -1024,8 +1533,9 @@ U0 manage(U64 win)
   XSelectInput(dpy, win, StructureNotifyMask | EnterWindowMask);
   grab_window_buttons(win);
   XSetWindowBorderWidth(dpy, win, border_width);
-  XMapWindow(dpy, win);
-  if (mode == MODE_FLOATING) {
+  if (clients[i].floating) {
+    place_floating(i);
+  } else if (mode == MODE_FLOATING) {
     I64 offset = (i % 7) * 24;
     I32 w = screen_w * 70 / 100;
     I32 h = screen_h * 70 / 100;
@@ -1035,6 +1545,17 @@ U0 manage(U64 win)
     clients[i].h = h;
     XMoveResizeWindow(dpy, win, clients[i].x, clients[i].y, w, h);
   }
+  if (target != current_workspace) {
+    // A rule sent this window to another workspace: keep it hidden and leave
+    // the current focus alone so nothing pops up in front of the user.
+    clients[i].mapped = 0;
+    if (wa.map_state == IsViewable) {
+      clients[i].ignore_unmap = 1;
+      XUnmapWindow(dpy, win);
+    }
+    return;
+  }
+  XMapWindow(dpy, win);
   selected = i;
   arrange();
   focus_client(selected);
@@ -1104,6 +1625,11 @@ U0 init_atoms()
   net_supporting_wm_check = XInternAtom(dpy, "_NET_SUPPORTING_WM_CHECK", False);
   net_wm_name = XInternAtom(dpy, "_NET_WM_NAME", False);
   utf8_string = XInternAtom(dpy, "UTF8_STRING", False);
+  net_wm_window_type = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False);
+  wtype_dialog = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+  wtype_utility = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+  wtype_splash = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+  wtype_toolbar = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
   support_window = XCreateSimpleWindow(dpy, root, -1, -1, 1, 1, 0, 0, 0);
   support_data = &support_window;
   supported_data = supported;
@@ -1163,7 +1689,7 @@ U0 handle_button(XButtonEvent *button)
 U0 handle_enter(XCrossingEvent *crossing)
 {
   I64 i;
-  if (drag_mode) return;
+  if (!focus_follows || drag_mode) return;
   if (crossing->mode != NotifyNormal || crossing->detail == NotifyInferior) return;
   i = client_index(crossing->window);
   if (i < 0 || i == selected) return;
@@ -1246,7 +1772,7 @@ U0 dispatch(XEvent *event)
       break;
     case ConfigureRequest:
       i = client_index(event->xconfigurerequest.window);
-      if (i >= 0 && mode == MODE_TILING) arrange();
+      if (i >= 0 && mode == MODE_TILING && !clients[i].floating) arrange();
       else {
         changes.x = event->xconfigurerequest.x;
         changes.y = event->xconfigurerequest.y;
