@@ -27,7 +27,11 @@ Keybinds (+/-).
 
 **Not working:** 
 
-/config folder doesn't go to ~/.config/ path for whatever reason. Will be fixing it shortly. For now, manually cut the lhwm.conf and use mkdir to create a config for LHWM.
+Not aware. Submit issues.
+
+**Fixed**
+
+Config generation has been fixed in the [unstable version of LHWM.](https://github.com/r2ality/lhwm/releases/tag/v.1.1.1u)
 
 ## Demo
 
