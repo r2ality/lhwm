@@ -363,6 +363,11 @@ class XWindowChanges
   I32 stack_mode;
   I32 pad1;
 };
+class XClassHint
+{
+  U8 *res_name;
+  U8 *res_class;
+};
 class XColor
 {
   U64 pixel;
@@ -427,6 +432,9 @@ extern "c" I32 XChangeProperty(U8 *dpy, U64 win, U64 property, U64 type, I32 for
 extern "c" I32 XSendEvent(U8 *dpy, U64 win, I32 propagate, I64 mask, XEvent *event);
 extern "c" I32 XGetWMProtocols(U8 *dpy, U64 win, U8 **protocols, I32 *count);
 extern "c" I32 XFree(U8 *data);
+extern "c" I32 XGetTransientForHint(U8 *dpy, U64 win, U64 *parent_ret);
+extern "c" I32 XGetClassHint(U8 *dpy, U64 win, XClassHint *hint);
+extern "c" I32 XGetWindowProperty(U8 *dpy, U64 win, U64 property, I64 offset, I64 length, I32 delete, U64 req_type, U64 *actual_type, I32 *actual_format, U64 *nitems, U64 *bytes_after, U8 **prop);
 extern "c" I32 XConfigureWindow(U8 *dpy, U64 win, U32 mask, XWindowChanges *changes);
 extern "c" I32 XGrabKey(U8 *dpy, I32 keycode, U32 modifiers, U64 win, I32 owner_events, I32 pointer_mode, I32 keyboard_mode);
 extern "c" I32 XUngrabKey(U8 *dpy, I32 keycode, U32 modifiers, U64 win);
@@ -442,6 +450,8 @@ extern "c" I32 strncasecmp(U8 *a, U8 *b, U64 n);
 extern "c" U8 *strchr(U8 *s, I32 c);
 extern "c" U8 *fopen(U8 *path, U8 *mode);
 extern "c" U8 *fgets(U8 *buf, I32 size, U8 *file);
+extern "c" I32 fputs(U8 *text, U8 *file);
+extern "c" I32 mkdir(U8 *path, U32 mode);
 extern "c" I32 fclose(U8 *file);
 extern "c" U8 *getenv(U8 *name);
 extern "c" I64 fork();
