@@ -14,9 +14,15 @@ grep -q '^bind = Mod4+d spawn dmenu_run$' config/lhwm.conf
 grep -q 'bar_enabled = true' config/lhwm.conf
 grep -q 'bar_border_color = #45475a' config/lhwm.conf
 grep -q 'workspace_active_border = #d8ad4a' config/lhwm.conf
-grep -q 'bar_icon_mark = C+' config/lhwm.conf
-grep -q 'bar_icon_enabled = true' config/lhwm.conf
-grep -q 'bar_icon_shadow = #a85d26' config/lhwm.conf
+grep -q 'config.HC' src/lhwm.HC
+grep -q 'write_default_config' src/lhwm.HC
+grep -q 'make_config_dir' src/lhwm.HC
+grep -q 'parse_hc_line' src/lhwm.HC
+grep -q 'window_wants_float' src/lhwm.HC
+grep -q '_NET_WM_WINDOW_TYPE_DIALOG' src/lhwm.HC
+grep -q 'XGetTransientForHint' src/x11.HH
+grep -q 'RULE_WORKSPACE' src/lhwm.HC
+grep -q 'focus_follows' src/lhwm.HC
 for n in 1 2 3 4 5 6 7 8 9; do
   grep -q "^bind = Mod4+$n workspace $n$" config/lhwm.conf
   grep -q "^bind = Mod4+Shift+$n move_workspace $n$" config/lhwm.conf
@@ -42,8 +48,12 @@ grep -q 'XListFonts' src/lhwm.HC
 grep -q 'bar_font_name' src/lhwm.HC
 grep -q 'binds\[i\]\.keycode == key->keycode' src/lhwm.HC
 grep -q 'root, False, GrabModeAsync, GrabModeAsync' src/lhwm.HC
-grep -q 'XGrabButton(dpy, Button1, Mod4Mask, win, False' src/lhwm.HC
-grep -q 'XGrabButton(dpy, Button3, Mod4Mask, win, False' src/lhwm.HC
+grep -q 'XGrabButton(dpy, Button1, Mod4Mask | locks\[i\], win, False' src/lhwm.HC
+grep -q 'XGrabButton(dpy, Button3, Mod4Mask | locks\[i\], win, False' src/lhwm.HC
+! grep -q 'bar_icon' src/lhwm.HC config/lhwm.conf
+grep -q 'EnterWindowMask' src/lhwm.HC
+grep -q 'case EnterNotify' src/lhwm.HC
+! grep -q 'StructureNotifyMask | ButtonPressMask' src/lhwm.HC
 grep -q 'b->keycode = keycode' src/lhwm.HC
 ! grep -q 'binding->action, "launcher"' src/lhwm.HC
 ! grep -q 'launcher_command' src/lhwm.HC
@@ -67,5 +77,5 @@ grep -Fq 'providedSessions = [ "lhwm" ];' nix/lhwm-session.nix.in
 grep -q 'nix build .#lhwm --no-link --print-out-paths' generate-xsession.sh
 grep -q 'LHWM_PACKAGE' generate-xsession.sh
 
-printf 'LHWM source, workspace, configuration, and native clock smoke checks passed.\n'
+printf 'LHWM source, config.HC, window-rule, workspace, and native clock smoke checks passed.\n'
 printf 'Note: this does not compile the HolyC core; run ./build.sh with hcc installed.\n'
