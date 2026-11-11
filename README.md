@@ -35,10 +35,6 @@ Not aware. will daily drive it for a bit and update issues.
 ![Demo 2](https://github.com/r2ality/lhwm/blob/main/demos/demo_floating.png?raw=true)
 ![Demo 3](https://github.com/r2ality/lhwm/blob/main/demos/demo_tiling.png?raw=true)
 
-> compiled with `hcc` or runtime-tested in this environment because the HolyC
-> compiler is unavailable here. Run `make check`, then compile and test in a
-> nested X server (Xephyr/Xvfb) before replacing a known-good login session.
-
 ## Design
 
 - **Language:** HolyC, compiled ahead-of-time by `hcc`.
@@ -356,11 +352,6 @@ bar_border_color = #45475a
 bar_bg = #1e1e2e
 bar_fg = #cdd6f4
 bar_accent = #d8ad4a
-bar_icon_fg = #ffffff
-bar_icon_shadow = #a85d26
-bar_icon_enabled = true
-bar_icon_mark = C+
-bar_icon = HolyC
 
 workspace_border_color = #45475a
 workspace_active_border = #d8ad4a
