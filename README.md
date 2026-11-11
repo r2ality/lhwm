@@ -29,7 +29,7 @@ Keybinds (+/-).
 
 Not aware. will daily drive it for a bit and update issues.
 
-## Demos
+## Demo
 
 ![Demo 1](https://github.com/r2ality/lhwm/blob/main/demos/demo.png?raw=true)
 ![Demo 2](https://github.com/r2ality/lhwm/blob/main/demos/demo_floating.png?raw=true)
