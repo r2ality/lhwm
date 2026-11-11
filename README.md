@@ -27,7 +27,7 @@ Keybinds (+/-).
 
 **Not working:** 
 
-Not aware. will daily drive it for a bit and update issues.
+/config folder doesn't go to ~/.config/ path for whatever reason. Will be fixing it shortly. For now, manually cut the lhwm.conf and use mkdir to create a config for LHWM.
 
 ## Demo
 
