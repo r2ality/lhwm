@@ -29,7 +29,13 @@ Reload WM
 
 **Not working:** 
 
-Not aware. Submit issues.
+In Wayland (X11 only). Support for Wayland in the future is planned.
+
+Laptop battery widget (Will add one soon.)
+
+**Unknown**
+
+Multi-monitor support. needs testers with 2 or more monitors for contribution.
 
 **Fixed**
 
